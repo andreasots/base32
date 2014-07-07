@@ -7,3 +7,9 @@ authors = [ "Andreas Ots <qrpth@qrpth.eu>" ]
 [[lib]]
 
 name = "crockford-base32"
+
+[dependencies.quickcheck]
+git = "https://github.com/BurntSushi/quickcheck"
+
+[dependencies.quickcheck_macros]
+git = "https://github.com/BurntSushi/quickcheck"

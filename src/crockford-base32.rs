@@ -1,6 +1,14 @@
 #![crate_id="crockford-base32#0.1"]
 #![crate_type="rlib"]
 
+#![feature(phase)]
+
+#[cfg(test)]
+extern crate quickcheck;
+#[cfg(test)]
+#[phase(plugin)]
+extern crate quickcheck_macros;
+
 use std::slice::MutableCloneableVector;
 
 pub fn encode(data: &[u8]) -> Vec<Ascii> {
@@ -61,6 +69,29 @@ pub fn decode(data: &[Ascii]) -> Option<Vec<u8>> {
 mod test {
     extern crate test;
     use super::{encode, decode};
+    use quickcheck;
+    use std;
+    use std::rand::distributions::IndependentSample;
+
+    #[deriving(Clone)]
+    struct B32 {
+        c: Ascii
+    }
+
+    impl quickcheck::Arbitrary for B32 {
+        fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> B32 {
+            let alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ".to_ascii();
+            B32 {
+                c: alphabet[std::rand::distributions::Range::new(0, alphabet.len()).ind_sample(g)]
+            }
+        }
+    }
+    
+    impl std::fmt::Show for B32 {
+        fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::FormatError> {
+            self.c.fmt(f)
+        }
+    }
 
     #[test]
     fn masks() {
@@ -70,17 +101,15 @@ mod test {
         assert_eq!(decode("0Z0Z0Z0Z".to_ascii()).unwrap(), vec![0x07, 0xC1, 0xF0, 0x7C, 0x1F]);
     }
 
-    #[test]
-    fn invertible() {
-        for i in range(0, 256u) {
-            let test = [i as u8, i as u8, i as u8, i as u8, i as u8];
-            assert_eq!(decode(encode(test.as_slice()).as_slice()).unwrap().as_slice(), test.as_slice());
-        }
+    #[quickcheck]
+    fn invertible(data: Vec<u8>) -> bool {
+        decode(encode(data.as_slice()).as_slice()).unwrap() == data
     }
 
-    #[test]
-    fn lower_case() {
-        assert_eq!(decode("abcdefgh".to_ascii()), decode("ABCDEFGH".to_ascii()))
+    #[quickcheck]
+    fn lower_case(data: Vec<B32>) -> bool {
+        let data: Vec<Ascii> = data.iter().map(|e| e.c).collect();
+        decode(data.as_slice()) == decode(data.as_slice().to_lower().as_slice())
     }
 
     #[test]
