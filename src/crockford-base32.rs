@@ -1,4 +1,4 @@
-#![crate_id="crockford-base32#0.1"]
+#![crate_name="crockford-base32"]
 #![crate_type="rlib"]
 
 #![feature(phase)]
@@ -9,8 +9,6 @@ extern crate quickcheck;
 #[phase(plugin)]
 extern crate quickcheck_macros;
 
-use std::slice::MutableCloneableVector;
-
 pub fn encode(data: &[u8]) -> Vec<Ascii> {
     let alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ".to_ascii();
     let mut ret = Vec::with_capacity((data.len()+3)/4*5);
@@ -18,7 +16,7 @@ pub fn encode(data: &[u8]) -> Vec<Ascii> {
     for chunk in data.chunks(5) {
         let buf = {
             let mut buf = [0u8, ..5];
-            buf.copy_from(chunk);
+            buf.clone_from_slice(chunk);
             buf
         };
         ret.push(alphabet[((buf[0] & 0xF8) >> 3) as uint]);
@@ -113,7 +111,7 @@ mod test {
     }
 
     #[test]
-    #[allow(non_snake_case_functions)]
+    #[allow(non_snake_case)]
     fn iIlL1_oO0() {
         assert_eq!(decode("IiLlOo".to_ascii()), decode("111100".to_ascii()));
     }
