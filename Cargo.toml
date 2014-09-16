@@ -1,10 +1,10 @@
 [package]
 
 name = "crockford-base32"
-version = "0.1.0"
+version = "0.1.1"
 authors = [ "Andreas Ots <qrpth@qrpth.eu>" ]
 
-[[lib]]
+[lib]
 
 name = "crockford-base32"
 
