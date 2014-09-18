@@ -1,4 +1,4 @@
-# rust-base32
+# base32
 
 This library lets you encode and decode in either [RFC4648 Base32](http://en.wikipedia.org/wiki/Base32#RFC_4648_Base32_alphabet) or in [Crockford Base32](http://en.wikipedia.org/wiki/Base32#Crockford.27s_Base32).
 
