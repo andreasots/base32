@@ -18,13 +18,13 @@ pub enum Base32Type {
     RFC4648Base32, CrockfordBase32, UnpaddedRFC4648Base32
 }
 
-static rfc4648_alphabet: &'static str   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-static crockford_alphabet: &'static str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+static RFC4648_ALPHABET: &'static str   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+static CROCKFORD_ALPHABET: &'static str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 pub fn encode(base32_type: Base32Type, data: &[u8]) -> Vec<Ascii> {
     let alphabet = match base32_type {
-        RFC4648Base32 | UnpaddedRFC4648Base32 => rfc4648_alphabet,
-        CrockfordBase32 => crockford_alphabet
+        RFC4648Base32 | UnpaddedRFC4648Base32 => RFC4648_ALPHABET,
+        CrockfordBase32 => CROCKFORD_ALPHABET
     }.to_ascii();
     let mut ret = Vec::with_capacity((data.len()+3)/4*5);
 
@@ -62,14 +62,14 @@ pub fn encode(base32_type: Base32Type, data: &[u8]) -> Vec<Ascii> {
     ret
 }
 
-static rfc4648_inv_alphabet: [u8, ..43] = [-1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1, 0, -1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25];
+static RFC4648_INV_ALPHABET: [u8, ..43] = [-1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1, 0, -1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25];
 
-static crockford_inv_alphabet: [u8, ..43] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17, 1, 18, 19, 1, 20, 21, 0, 22, 23, 24, 25, 26, -1, 27, 28, 29, 30, 31];
+static CROCKFORD_INV_ALPHABET: [u8, ..43] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17, 1, 18, 19, 1, 20, 21, 0, 22, 23, 24, 25, 26, -1, 27, 28, 29, 30, 31];
 
 pub fn decode(base32_type: Base32Type, data: &[Ascii]) -> Option<Vec<u8>> {
     let alphabet = match base32_type {
-        RFC4648Base32 | UnpaddedRFC4648Base32 => rfc4648_inv_alphabet,
-        CrockfordBase32 => crockford_inv_alphabet
+        RFC4648Base32 | UnpaddedRFC4648Base32 => RFC4648_INV_ALPHABET,
+        CrockfordBase32 => CROCKFORD_INV_ALPHABET
     };
     let mut unpadded_data_length = data.len();
     for i in range_inclusive(1u, min(6, data.len())) {
