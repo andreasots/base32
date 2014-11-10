@@ -53,7 +53,7 @@ pub fn encode(base32_type: Base32Type, data: &[u8]) -> Vec<Ascii> {
             }
             RFC4648Base32 => {
                 for i in range_inclusive(1, num_extra) {
-                    *ret.get_mut(len-i) = '='.to_ascii();
+                    ret[len-i] = '='.to_ascii();
                 }
             }
         }
