@@ -60,7 +60,7 @@ pub fn encode(base32_type: Base32Type, data: &[u8]) -> Vec<Ascii> {
             }
         }
     }
-                
+
     ret
 }
 
@@ -106,7 +106,8 @@ pub fn decode(base32_type: Base32Type, data: &[Ascii]) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod test {
     extern crate test;
-    use super::{encode, decode, CrockfordBase32, RFC4648Base32, UnpaddedRFC4648Base32};
+    use super::{encode, decode};
+    use super::Base32Type::{CrockfordBase32, RFC4648Base32, UnpaddedRFC4648Base32};
     use quickcheck;
     use std;
     use std::rand::distributions::IndependentSample;
@@ -124,37 +125,37 @@ mod test {
             }
         }
     }
-    
+
     impl std::fmt::Show for B32 {
-        fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::FormatError> {
+        fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
             self.c.fmt(f)
         }
     }
 
     #[test]
     fn masks_crockford() {
-        assert_eq!(encode(CrockfordBase32, [0xF8, 0x3E, 0x0F, 0x83, 0xE0]), Vec::from_slice("Z0Z0Z0Z0".to_ascii()));
-        assert_eq!(encode(CrockfordBase32, [0x07, 0xC1, 0xF0, 0x7C, 0x1F]), Vec::from_slice("0Z0Z0Z0Z".to_ascii()));
-        assert_eq!(decode(CrockfordBase32, "Z0Z0Z0Z0".to_ascii()).unwrap(), vec![0xF8, 0x3E, 0x0F, 0x83, 0xE0]);
-        assert_eq!(decode(CrockfordBase32, "0Z0Z0Z0Z".to_ascii()).unwrap(), vec![0x07, 0xC1, 0xF0, 0x7C, 0x1F]);
+        assert_eq!(&*encode(CrockfordBase32, &[0xF8, 0x3E, 0x0F, 0x83, 0xE0]), "Z0Z0Z0Z0".to_ascii());
+        assert_eq!(&*encode(CrockfordBase32, &[0x07, 0xC1, 0xF0, 0x7C, 0x1F]), "0Z0Z0Z0Z".to_ascii());
+        assert_eq!(&*decode(CrockfordBase32, "Z0Z0Z0Z0".to_ascii()).unwrap(), [0xF8, 0x3E, 0x0F, 0x83, 0xE0].as_slice());
+        assert_eq!(&*decode(CrockfordBase32, "0Z0Z0Z0Z".to_ascii()).unwrap(), [0x07, 0xC1, 0xF0, 0x7C, 0x1F].as_slice());
     }
 
     #[test]
     fn masks_rfc4648() {
-        assert_eq!(encode(RFC4648Base32, [0xF8, 0x3E, 0x7F, 0x83, 0xE7]), Vec::from_slice("7A7H7A7H".to_ascii()));
-        assert_eq!(encode(RFC4648Base32, [0x77, 0xC1, 0xF7, 0x7C, 0x1F]), Vec::from_slice("O7A7O7A7".to_ascii()));
-        assert_eq!(decode(RFC4648Base32, "7A7H7A7H".to_ascii()).unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
-        assert_eq!(decode(RFC4648Base32, "O7A7O7A7".to_ascii()).unwrap(), vec![0x77, 0xC1, 0xF7, 0x7C, 0x1F]);
-        assert_eq!(encode(RFC4648Base32, [0xF8, 0x3E, 0x7F, 0x83]), Vec::from_slice("7A7H7AY=".to_ascii()));
+        assert_eq!(&*encode(RFC4648Base32, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "7A7H7A7H".to_ascii());
+        assert_eq!(&*encode(RFC4648Base32, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]), "O7A7O7A7".to_ascii());
+        assert_eq!(&*decode(RFC4648Base32, "7A7H7A7H".to_ascii()).unwrap(), [0xF8, 0x3E, 0x7F, 0x83, 0xE7].as_slice());
+        assert_eq!(&*decode(RFC4648Base32, "O7A7O7A7".to_ascii()).unwrap(), [0x77, 0xC1, 0xF7, 0x7C, 0x1F].as_slice());
+        assert_eq!(&*encode(RFC4648Base32, &[0xF8, 0x3E, 0x7F, 0x83]), "7A7H7AY=".to_ascii());
     }
 
     #[test]
     fn masks_unpadded_rfc4648() {
-        assert_eq!(encode(UnpaddedRFC4648Base32, [0xF8, 0x3E, 0x7F, 0x83, 0xE7]), Vec::from_slice("7A7H7A7H".to_ascii()));
-        assert_eq!(encode(UnpaddedRFC4648Base32, [0x77, 0xC1, 0xF7, 0x7C, 0x1F]), Vec::from_slice("O7A7O7A7".to_ascii()));
-        assert_eq!(decode(UnpaddedRFC4648Base32, "7A7H7A7H".to_ascii()).unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
-        assert_eq!(decode(UnpaddedRFC4648Base32, "O7A7O7A7".to_ascii()).unwrap(), vec![0x77, 0xC1, 0xF7, 0x7C, 0x1F]);
-        assert_eq!(encode(UnpaddedRFC4648Base32, [0xF8, 0x3E, 0x7F, 0x83]), Vec::from_slice("7A7H7AY".to_ascii()));
+        assert_eq!(&*encode(UnpaddedRFC4648Base32, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "7A7H7A7H".to_ascii());
+        assert_eq!(&*encode(UnpaddedRFC4648Base32, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]), "O7A7O7A7".to_ascii());
+        assert_eq!(&*decode(UnpaddedRFC4648Base32, "7A7H7A7H".to_ascii()).unwrap(), [0xF8, 0x3E, 0x7F, 0x83, 0xE7].as_slice());
+        assert_eq!(&*decode(UnpaddedRFC4648Base32, "O7A7O7A7".to_ascii()).unwrap(), [0x77, 0xC1, 0xF7, 0x7C, 0x1F].as_slice());
+        assert_eq!(&*encode(UnpaddedRFC4648Base32, &[0xF8, 0x3E, 0x7F, 0x83]), "7A7H7AY".to_ascii());
     }
 
     #[test]
@@ -192,7 +193,7 @@ mod test {
     #[quickcheck]
     fn lower_case(data: Vec<B32>) -> bool {
         let data: Vec<Ascii> = data.iter().map(|e| e.c).collect();
-        decode(CrockfordBase32, data.as_slice()) == decode(CrockfordBase32, data.as_slice().to_lower().as_slice())
+        decode(CrockfordBase32, data.as_slice()) == decode(CrockfordBase32, data.as_slice().to_lowercase().as_slice())
     }
 
     #[test]
