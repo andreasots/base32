@@ -3,6 +3,9 @@
 name = "base32"
 version = "0.1.1"
 authors = [ "Andreas Ots <qrpth@qrpth.eu>", "Tim Dumol <tim@timdumol.com>" ]
+license = "MIT"
+repository = "https://github.com/andreasots/base32"
+description = "Base32 encoder/decoder for Rust"
 
 [lib]
 
