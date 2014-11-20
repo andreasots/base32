@@ -12,6 +12,8 @@ extern crate quickcheck_macros;
 use std::iter::range_inclusive;
 use std::cmp::min;
 
+use Base32Type::{RFC4648Base32, CrockfordBase32, UnpaddedRFC4648Base32};
+
 pub enum Base32Type {
     // Not sure if it's better to just have an additional `padding: bool`
     // argument to the encode function
