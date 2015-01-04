@@ -11,8 +11,6 @@ description = "Base32 encoder/decoder for Rust"
 
 name = "base32"
 
-[dev-dependencies.quickcheck]
-git = "https://github.com/BurntSushi/quickcheck"
-
-[dev-dependencies.quickcheck_macros]
-git = "https://github.com/BurntSushi/quickcheck"
+[dev-dependencies]
+quickcheck = "*"
+quickcheck_macros = "*"
