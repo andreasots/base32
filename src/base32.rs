@@ -1,9 +1,7 @@
-#![feature(phase)]
-
 #[cfg(test)]
 extern crate quickcheck;
 #[cfg(test)]
-#[phase(plugin)]
+#[macro_use]
 extern crate quickcheck_macros;
 
 use std::iter::range_inclusive;
@@ -36,14 +34,14 @@ pub fn encode(base32_type: Base32Type, data: &[u8]) -> String {
             buf.clone_from_slice(chunk);
             buf
         };
-        ret.push(alphabet[((buf[0] & 0xF8) >> 3) as uint]);
-        ret.push(alphabet[(((buf[0] & 0x07) << 2) | ((buf[1] & 0xC0) >> 6)) as uint]);
-        ret.push(alphabet[((buf[1] & 0x3E) >> 1) as uint]);
-        ret.push(alphabet[(((buf[1] & 0x01) << 4) | ((buf[2] & 0xF0) >> 4)) as uint]);
-        ret.push(alphabet[(((buf[2] & 0x0F) << 1) | (buf[3] >> 7)) as uint]);
-        ret.push(alphabet[((buf[3] & 0x7C) >> 2) as uint]);
-        ret.push(alphabet[(((buf[3] & 0x03) << 3) | ((buf[4] & 0xE0) >> 5)) as uint]);
-        ret.push(alphabet[(buf[4] & 0x1F) as uint]);
+        ret.push(alphabet[((buf[0] & 0xF8) >> 3) as usize]);
+        ret.push(alphabet[(((buf[0] & 0x07) << 2) | ((buf[1] & 0xC0) >> 6)) as usize]);
+        ret.push(alphabet[((buf[1] & 0x3E) >> 1) as usize]);
+        ret.push(alphabet[(((buf[1] & 0x01) << 4) | ((buf[2] & 0xF0) >> 4)) as usize]);
+        ret.push(alphabet[(((buf[2] & 0x0F) << 1) | (buf[3] >> 7)) as usize]);
+        ret.push(alphabet[((buf[3] & 0x7C) >> 2) as usize]);
+        ret.push(alphabet[(((buf[3] & 0x03) << 3) | ((buf[4] & 0xE0) >> 5)) as usize]);
+        ret.push(alphabet[(buf[4] & 0x1F) as usize]);
     }
 
     if data.len() % 5 != 0 {
@@ -78,7 +76,7 @@ pub fn decode(base32_type: Base32Type, data: &str) -> Option<Vec<u8>> {
         CrockfordBase32 => CROCKFORD_INV_ALPHABET
     };
     let mut unpadded_data_length = data.len();
-    for i in range_inclusive(1u, min(6, data.len())) {
+    for i in range_inclusive(1, min(6, data.len())) {
         if data[data.len() - i] != b'=' {
             break;
         }
@@ -90,7 +88,7 @@ pub fn decode(base32_type: Base32Type, data: &str) -> Option<Vec<u8>> {
         let buf = {
             let mut buf = [0u8; 8];
             for (i, &c) in chunk.iter().enumerate() {
-                match alphabet.get((c.to_ascii_uppercase()-b'0') as uint) {
+                match alphabet.get((c.to_ascii_uppercase()-b'0') as usize) {
                     Some(&-1) | None => return None,
                     Some(&value) => buf[i] = value,
                 };
