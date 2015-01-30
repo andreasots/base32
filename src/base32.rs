@@ -129,7 +129,7 @@ mod test {
         }
     }
 
-    impl std::fmt::Show for B32 {
+    impl std::fmt::Display for B32 {
         fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
             self.c.fmt(f)
         }
