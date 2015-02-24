@@ -1,8 +1,13 @@
+#![feature(core, collections, custom_attribute)]
+
 #[cfg(test)]
 extern crate quickcheck;
 #[cfg(test)]
 #[macro_use]
+#[no_link]
 extern crate quickcheck_macros;
+#[cfg(test)]
+extern crate rand;
 
 use std::iter::range_inclusive;
 use std::cmp::min;
@@ -112,8 +117,8 @@ mod test {
     use super::Base32Type::{CrockfordBase32, RFC4648Base32, UnpaddedRFC4648Base32};
     use quickcheck;
     use std;
-    use std::rand::distributions::IndependentSample;
     use std::ascii::AsciiExt;
+    use rand::distributions::{IndependentSample, Range};
 
     #[derive(Clone)]
     struct B32 {
@@ -124,7 +129,7 @@ mod test {
         fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> B32 {
             let alphabet = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
             B32 {
-                c: alphabet[std::rand::distributions::Range::new(0, alphabet.len()).ind_sample(g)]
+                c: alphabet[Range::new(0, alphabet.len()).ind_sample(g)]
             }
         }
     }
@@ -163,16 +168,16 @@ mod test {
 
     #[test]
     fn padding() {
-        let num_padding = [0u, 6, 4, 3, 1];
-        for i in range(1u, 6) {
+        let num_padding = [0, 6, 4, 3, 1];
+        for i in range(1, 6) {
             println!("Checking padding for length == {}", i);
             let encoded = encode(RFC4648Base32, range(0u8, i as u8).collect::<Vec<u8>>().as_slice());
-            assert_eq!(encoded.len(), 8u);
-            for j in range(0u, num_padding[i % 5]) {
+            assert_eq!(encoded.len(), 8);
+            for j in range(0, num_padding[i % 5]) {
                 println!("Making sure index {} is padding", encoded.len()-j-1);
                 assert_eq!(encoded.as_bytes()[encoded.len()-j-1], b'=');
             }
-            for j in range(0u, 8 - num_padding[i % 5]) {
+            for j in range(0, 8 - num_padding[i % 5]) {
                 println!("Making sure index {} is not padding", j);
                 assert!(encoded.as_bytes()[j] != b'=');
             }
