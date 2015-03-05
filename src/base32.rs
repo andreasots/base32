@@ -93,7 +93,7 @@ pub fn decode(base32_type: Base32Type, data: &str) -> Option<Vec<u8>> {
         let buf = {
             let mut buf = [0u8; 8];
             for (i, &c) in chunk.iter().enumerate() {
-                match alphabet.get((c.to_ascii_uppercase()-b'0') as usize) {
+                match alphabet.get(c.to_ascii_uppercase().wrapping_sub(b'0') as usize) {
                     Some(&-1) | None => return None,
                     Some(&value) => buf[i] = value,
                 };
