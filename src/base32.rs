@@ -169,15 +169,15 @@ mod test {
     #[test]
     fn padding() {
         let num_padding = [0, 6, 4, 3, 1];
-        for i in range(1, 6) {
+        for i in 1..6 {
             println!("Checking padding for length == {}", i);
-            let encoded = encode(RFC4648Base32, range(0u8, i as u8).collect::<Vec<u8>>().as_slice());
+            let encoded = encode(RFC4648Base32, (0..(i as u8)).collect::<Vec<u8>>().as_slice());
             assert_eq!(encoded.len(), 8);
-            for j in range(0, num_padding[i % 5]) {
+            for j in 0..(num_padding[i % 5]) {
                 println!("Making sure index {} is padding", encoded.len()-j-1);
                 assert_eq!(encoded.as_bytes()[encoded.len()-j-1], b'=');
             }
-            for j in range(0, 8 - num_padding[i % 5]) {
+            for j in 0..(8 - num_padding[i % 5]) {
                 println!("Making sure index {} is not padding", j);
                 assert!(encoded.as_bytes()[j] != b'=');
             }
