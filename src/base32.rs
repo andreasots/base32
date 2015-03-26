@@ -1,4 +1,5 @@
 #![feature(core, collections, custom_attribute)]
+#![cfg_attr(test, feature(test, convert))]
 
 #[cfg(test)]
 extern crate quickcheck;
@@ -111,6 +112,7 @@ pub fn decode(base32_type: Base32Type, data: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
+#[allow(dead_code, unused_attributes)]
 mod test {
     extern crate test;
     use super::{encode, decode};
@@ -170,15 +172,12 @@ mod test {
     fn padding() {
         let num_padding = [0, 6, 4, 3, 1];
         for i in 1..6 {
-            println!("Checking padding for length == {}", i);
-            let encoded = encode(RFC4648Base32, (0..(i as u8)).collect::<Vec<u8>>().as_slice());
+            let encoded = encode(RFC4648Base32, (0..(i as u8)).collect::<Vec<u8>>().as_ref());
             assert_eq!(encoded.len(), 8);
             for j in 0..(num_padding[i % 5]) {
-                println!("Making sure index {} is padding", encoded.len()-j-1);
                 assert_eq!(encoded.as_bytes()[encoded.len()-j-1], b'=');
             }
             for j in 0..(8 - num_padding[i % 5]) {
-                println!("Making sure index {} is not padding", j);
                 assert!(encoded.as_bytes()[j] != b'=');
             }
         }
@@ -186,22 +185,22 @@ mod test {
 
     #[quickcheck]
     fn invertible_crockford(data: Vec<u8>) -> bool {
-        decode(CrockfordBase32, encode(CrockfordBase32, data.as_slice()).as_slice()).unwrap() == data
+        decode(CrockfordBase32, encode(CrockfordBase32, data.as_ref()).as_ref()).unwrap() == data
     }
 
     #[quickcheck]
     fn invertible_rfc4648(data: Vec<u8>) -> bool {
-        decode(RFC4648Base32, encode(RFC4648Base32, data.as_slice()).as_slice()).unwrap() == data
+        decode(RFC4648Base32, encode(RFC4648Base32, data.as_ref()).as_ref()).unwrap() == data
     }
     #[quickcheck]
     fn invertible_unpadded_rfc4648(data: Vec<u8>) -> bool {
-        decode(UnpaddedRFC4648Base32, encode(UnpaddedRFC4648Base32, data.as_slice()).as_slice()).unwrap() == data
+        decode(UnpaddedRFC4648Base32, encode(UnpaddedRFC4648Base32, data.as_ref()).as_ref()).unwrap() == data
     }
 
     #[quickcheck]
     fn lower_case(data: Vec<B32>) -> bool {
         let data: String = data.iter().map(|e| e.c as char).collect();
-        decode(CrockfordBase32, data.as_slice()) == decode(CrockfordBase32, data.as_slice().to_ascii_lowercase().as_slice())
+        decode(CrockfordBase32, data.as_ref()) == decode(CrockfordBase32, data.to_ascii_lowercase().as_ref())
     }
 
     #[test]
@@ -228,7 +227,7 @@ mod test {
     #[bench]
     fn bench_encode(b: &mut test::Bencher) {
         let data = [0, 0, 0, 0, 0];
-        b.iter(|| encode(CrockfordBase32, data.as_slice()));
+        b.iter(|| encode(CrockfordBase32, data.as_ref()));
         b.bytes = data.len() as u64;
     }
 
