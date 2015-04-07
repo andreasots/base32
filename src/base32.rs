@@ -17,7 +17,7 @@ use Base32Type::{RFC4648Base32, CrockfordBase32, UnpaddedRFC4648Base32};
 
 use std::ascii::AsciiExt;
 
-#[derive(Copy)]
+#[derive(Copy,Clone)]
 pub enum Base32Type {
     // Not sure if it's better to just have an additional `padding: bool`
     // argument to the encode function
