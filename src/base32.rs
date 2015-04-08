@@ -1,43 +1,33 @@
-#![feature(core, collections, custom_attribute)]
-#![cfg_attr(test, feature(test, convert))]
-
 #[cfg(test)]
 extern crate quickcheck;
 #[cfg(test)]
-#[macro_use]
-#[no_link]
-extern crate quickcheck_macros;
-#[cfg(test)]
 extern crate rand;
 
-use std::iter::range_inclusive;
 use std::cmp::min;
-
-use Base32Type::{RFC4648Base32, CrockfordBase32, UnpaddedRFC4648Base32};
-
 use std::ascii::AsciiExt;
 
 #[derive(Copy,Clone)]
-pub enum Base32Type {
-    // Not sure if it's better to just have an additional `padding: bool`
-    // argument to the encode function
-    RFC4648Base32, CrockfordBase32, UnpaddedRFC4648Base32
+pub enum Alphabet {
+    RFC4648 { padding: bool },
+    Crockford,
 }
 
 const RFC4648_ALPHABET: &'static [u8]   = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const CROCKFORD_ALPHABET: &'static [u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-pub fn encode(base32_type: Base32Type, data: &[u8]) -> String {
-    let alphabet = match base32_type {
-        RFC4648Base32 | UnpaddedRFC4648Base32 => RFC4648_ALPHABET,
-        CrockfordBase32 => CROCKFORD_ALPHABET
+pub fn encode(alphabet: Alphabet, data: &[u8]) -> String {
+    let (alphabet, padding) = match alphabet {
+        Alphabet::RFC4648 { padding } => (RFC4648_ALPHABET, padding),
+        Alphabet::Crockford => (CROCKFORD_ALPHABET, false),
     };
     let mut ret = Vec::with_capacity((data.len()+3)/4*5);
 
     for chunk in data.chunks(5) {
         let buf = {
             let mut buf = [0u8; 5];
-            buf.clone_from_slice(chunk);
+            for (i, &b) in chunk.iter().enumerate() {
+                buf[i] = b;
+            }
             buf
         };
         ret.push(alphabet[((buf[0] & 0xF8) >> 3) as usize]);
@@ -53,36 +43,32 @@ pub fn encode(base32_type: Base32Type, data: &[u8]) -> String {
     if data.len() % 5 != 0 {
         let len = ret.len();
         let num_extra = 8-(data.len()%5*8+4)/5;
-        match base32_type {
-            UnpaddedRFC4648Base32 | CrockfordBase32 => {
-                ret.truncate(len-num_extra);
+        if padding {
+            for i in 1..num_extra+1 {
+                ret[len-i] = b'=';
             }
-            RFC4648Base32 => {
-                for i in range_inclusive(1, num_extra) {
-                    ret[len-i] = b'=';
-                }
-            }
+        } else {
+            ret.truncate(len-num_extra);
         }
     }
 
     String::from_utf8(ret).unwrap()
 }
 
-const RFC4648_INV_ALPHABET: [u8; 43] = [-1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1, 0, -1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25];
+const RFC4648_INV_ALPHABET: [i8; 43] = [-1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1, 0, -1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25];
+const CROCKFORD_INV_ALPHABET: [i8; 43] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17, 1, 18, 19, 1, 20, 21, 0, 22, 23, 24, 25, 26, -1, 27, 28, 29, 30, 31];
 
-const CROCKFORD_INV_ALPHABET: [u8; 43] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17, 1, 18, 19, 1, 20, 21, 0, 22, 23, 24, 25, 26, -1, 27, 28, 29, 30, 31];
-
-pub fn decode(base32_type: Base32Type, data: &str) -> Option<Vec<u8>> {
+pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
     if !data.is_ascii() {
         return None;
     }
     let data = data.as_bytes();
-    let alphabet = match base32_type {
-        RFC4648Base32 | UnpaddedRFC4648Base32 => RFC4648_INV_ALPHABET,
-        CrockfordBase32 => CROCKFORD_INV_ALPHABET
+    let alphabet = match alphabet {
+        Alphabet::RFC4648 {..} => RFC4648_INV_ALPHABET,
+        Alphabet::Crockford => CROCKFORD_INV_ALPHABET
     };
     let mut unpadded_data_length = data.len();
-    for i in range_inclusive(1, min(6, data.len())) {
+    for i in 1..min(6, data.len())+1 {
         if data[data.len() - i] != b'=' {
             break;
         }
@@ -96,7 +82,7 @@ pub fn decode(base32_type: Base32Type, data: &str) -> Option<Vec<u8>> {
             for (i, &c) in chunk.iter().enumerate() {
                 match alphabet.get(c.to_ascii_uppercase().wrapping_sub(b'0') as usize) {
                     Some(&-1) | None => return None,
-                    Some(&value) => buf[i] = value,
+                    Some(&value) => buf[i] = value as u8,
                 };
             }
             buf
@@ -114,9 +100,8 @@ pub fn decode(base32_type: Base32Type, data: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 #[allow(dead_code, unused_attributes)]
 mod test {
-    extern crate test;
     use super::{encode, decode};
-    use super::Base32Type::{CrockfordBase32, RFC4648Base32, UnpaddedRFC4648Base32};
+    use super::Alphabet::{Crockford, RFC4648};
     use quickcheck;
     use std;
     use std::ascii::AsciiExt;
@@ -136,43 +121,43 @@ mod test {
         }
     }
 
-    impl std::fmt::Display for B32 {
+    impl std::fmt::Debug for B32 {
         fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-            self.c.fmt(f)
+            (self.c as char).fmt(f)
         }
     }
 
     #[test]
     fn masks_crockford() {
-        assert_eq!(encode(CrockfordBase32, &[0xF8, 0x3E, 0x0F, 0x83, 0xE0]), "Z0Z0Z0Z0");
-        assert_eq!(encode(CrockfordBase32, &[0x07, 0xC1, 0xF0, 0x7C, 0x1F]), "0Z0Z0Z0Z");
-        assert_eq!(decode(CrockfordBase32, "Z0Z0Z0Z0").unwrap(), [0xF8, 0x3E, 0x0F, 0x83, 0xE0]);
-        assert_eq!(decode(CrockfordBase32, "0Z0Z0Z0Z").unwrap(), [0x07, 0xC1, 0xF0, 0x7C, 0x1F]);
+        assert_eq!(encode(Crockford, &[0xF8, 0x3E, 0x0F, 0x83, 0xE0]), "Z0Z0Z0Z0");
+        assert_eq!(encode(Crockford, &[0x07, 0xC1, 0xF0, 0x7C, 0x1F]), "0Z0Z0Z0Z");
+        assert_eq!(decode(Crockford, "Z0Z0Z0Z0").unwrap(), [0xF8, 0x3E, 0x0F, 0x83, 0xE0]);
+        assert_eq!(decode(Crockford, "0Z0Z0Z0Z").unwrap(), [0x07, 0xC1, 0xF0, 0x7C, 0x1F]);
     }
 
     #[test]
     fn masks_rfc4648() {
-        assert_eq!(encode(RFC4648Base32, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "7A7H7A7H");
-        assert_eq!(encode(RFC4648Base32, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]), "O7A7O7A7");
-        assert_eq!(decode(RFC4648Base32, "7A7H7A7H").unwrap(), [0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
-        assert_eq!(decode(RFC4648Base32, "O7A7O7A7").unwrap(), [0x77, 0xC1, 0xF7, 0x7C, 0x1F]);
-        assert_eq!(encode(RFC4648Base32, &[0xF8, 0x3E, 0x7F, 0x83]), "7A7H7AY=");
+        assert_eq!(encode(RFC4648 { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "7A7H7A7H");
+        assert_eq!(encode(RFC4648 { padding: true }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]), "O7A7O7A7");
+        assert_eq!(decode(RFC4648 { padding: true }, "7A7H7A7H").unwrap(), [0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
+        assert_eq!(decode(RFC4648 { padding: true }, "O7A7O7A7").unwrap(), [0x77, 0xC1, 0xF7, 0x7C, 0x1F]);
+        assert_eq!(encode(RFC4648 { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83]), "7A7H7AY=");
     }
 
     #[test]
     fn masks_unpadded_rfc4648() {
-        assert_eq!(encode(UnpaddedRFC4648Base32, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "7A7H7A7H");
-        assert_eq!(encode(UnpaddedRFC4648Base32, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]), "O7A7O7A7");
-        assert_eq!(decode(UnpaddedRFC4648Base32, "7A7H7A7H").unwrap(), [0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
-        assert_eq!(decode(UnpaddedRFC4648Base32, "O7A7O7A7").unwrap(), [0x77, 0xC1, 0xF7, 0x7C, 0x1F]);
-        assert_eq!(encode(UnpaddedRFC4648Base32, &[0xF8, 0x3E, 0x7F, 0x83]), "7A7H7AY");
+        assert_eq!(encode(RFC4648 { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "7A7H7A7H");
+        assert_eq!(encode(RFC4648 { padding: false }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]), "O7A7O7A7");
+        assert_eq!(decode(RFC4648 { padding: false }, "7A7H7A7H").unwrap(), [0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
+        assert_eq!(decode(RFC4648 { padding: false }, "O7A7O7A7").unwrap(), [0x77, 0xC1, 0xF7, 0x7C, 0x1F]);
+        assert_eq!(encode(RFC4648 { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83]), "7A7H7AY");
     }
 
     #[test]
     fn padding() {
         let num_padding = [0, 6, 4, 3, 1];
         for i in 1..6 {
-            let encoded = encode(RFC4648Base32, (0..(i as u8)).collect::<Vec<u8>>().as_ref());
+            let encoded = encode(RFC4648 { padding: true }, (0..(i as u8)).collect::<Vec<u8>>().as_ref());
             assert_eq!(encoded.len(), 8);
             for j in 0..(num_padding[i % 5]) {
                 assert_eq!(encoded.as_bytes()[encoded.len()-j-1], b'=');
@@ -183,58 +168,56 @@ mod test {
         }
     }
 
-    #[quickcheck]
-    fn invertible_crockford(data: Vec<u8>) -> bool {
-        decode(CrockfordBase32, encode(CrockfordBase32, data.as_ref()).as_ref()).unwrap() == data
+    #[test]
+    fn invertible_crockford() {
+        fn test(data: Vec<u8>) -> bool {
+            decode(Crockford, encode(Crockford, data.as_ref()).as_ref()).unwrap() == data
+        }
+        quickcheck::quickcheck(test as fn(Vec<u8>) -> bool)
     }
 
-    #[quickcheck]
-    fn invertible_rfc4648(data: Vec<u8>) -> bool {
-        decode(RFC4648Base32, encode(RFC4648Base32, data.as_ref()).as_ref()).unwrap() == data
+    #[test]
+    fn invertible_rfc4648() {
+        fn test(data: Vec<u8>) -> bool {
+            decode(RFC4648 { padding: true }, encode(RFC4648 { padding: true }, data.as_ref()).as_ref()).unwrap() == data
+        }
+        quickcheck::quickcheck(test as fn(Vec<u8>) -> bool)
     }
-    #[quickcheck]
-    fn invertible_unpadded_rfc4648(data: Vec<u8>) -> bool {
-        decode(UnpaddedRFC4648Base32, encode(UnpaddedRFC4648Base32, data.as_ref()).as_ref()).unwrap() == data
+    #[test]
+    fn invertible_unpadded_rfc4648() {
+        fn test(data: Vec<u8>) -> bool {
+            decode(RFC4648 { padding: false }, encode(RFC4648 { padding: false }, data.as_ref()).as_ref()).unwrap() == data
+        }
+        quickcheck::quickcheck(test as fn(Vec<u8>) -> bool)
     }
 
-    #[quickcheck]
-    fn lower_case(data: Vec<B32>) -> bool {
-        let data: String = data.iter().map(|e| e.c as char).collect();
-        decode(CrockfordBase32, data.as_ref()) == decode(CrockfordBase32, data.to_ascii_lowercase().as_ref())
+    #[test]
+    fn lower_case() {
+        fn test(data: Vec<B32>) -> bool {
+            let data: String = data.iter().map(|e| e.c as char).collect();
+            decode(Crockford, data.as_ref()) == decode(Crockford, data.to_ascii_lowercase().as_ref())
+        }
+        quickcheck::quickcheck(test as fn(Vec<B32>) -> bool)
     }
 
     #[test]
     #[allow(non_snake_case)]
     fn iIlL1_oO0() {
-        assert_eq!(decode(CrockfordBase32, "IiLlOo"), decode(CrockfordBase32, "111100"));
+        assert_eq!(decode(Crockford, "IiLlOo"), decode(Crockford, "111100"));
     }
 
     #[test]
     fn invalid_chars_crockford() {
-        assert_eq!(decode(CrockfordBase32, ","), None)
+        assert_eq!(decode(Crockford, ","), None)
     }
 
     #[test]
     fn invalid_chars_rfc4648() {
-        assert_eq!(decode(RFC4648Base32, ","), None)
+        assert_eq!(decode(RFC4648 { padding: true }, ","), None)
     }
 
     #[test]
     fn invalid_chars_unpadded_rfc4648() {
-        assert_eq!(decode(UnpaddedRFC4648Base32, ","), None)
-    }
-
-    #[bench]
-    fn bench_encode(b: &mut test::Bencher) {
-        let data = [0, 0, 0, 0, 0];
-        b.iter(|| encode(CrockfordBase32, data.as_ref()));
-        b.bytes = data.len() as u64;
-    }
-
-    #[bench]
-    fn bench_decode(b: &mut test::Bencher) {
-        let data = "00000000";
-        b.iter(|| decode(CrockfordBase32, data));
-        b.bytes = data.len() as u64;
+        assert_eq!(decode(RFC4648 { padding: false }, ","), None)
     }
 }
