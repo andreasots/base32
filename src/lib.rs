@@ -4,7 +4,6 @@ extern crate quickcheck;
 extern crate rand;
 
 use std::cmp::min;
-use std::ascii::AsciiExt;
 
 #[derive(Copy,Clone)]
 pub enum Alphabet {
@@ -104,8 +103,7 @@ mod test {
     use super::Alphabet::{Crockford, RFC4648};
     use quickcheck;
     use std;
-    use std::ascii::AsciiExt;
-    use rand::distributions::{IndependentSample, Range};
+    use rand::Rng;
 
     #[derive(Clone)]
     struct B32 {
@@ -116,7 +114,7 @@ mod test {
         fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> B32 {
             let alphabet = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
             B32 {
-                c: alphabet[Range::new(0, alphabet.len()).ind_sample(g)]
+                c: alphabet[g.gen_range(0, alphabet.len())]
             }
         }
     }
