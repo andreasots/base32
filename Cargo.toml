@@ -12,5 +12,5 @@ description = "Base32 encoder/decoder for Rust"
 name = "base32"
 
 [dev-dependencies]
-quickcheck = "0.2.24"
-rand = "0.3.13"
+quickcheck = "0.7.1"
+rand = "0.5.5"
