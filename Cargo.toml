@@ -6,6 +6,7 @@ authors = [ "Andreas Ots <qrpth@qrpth.eu>", "Tim Dumol <tim@timdumol.com>" ]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/andreasots/base32"
 description = "Base32 encoder/decoder for Rust"
+categories = ["encoding", "parser-implementations"]
 
 [lib]
 
