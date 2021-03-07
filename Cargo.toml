@@ -14,4 +14,3 @@ name = "base32"
 
 [dev-dependencies]
 quickcheck = "1.0.3"
-rand = "0.7.0"

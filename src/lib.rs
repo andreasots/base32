@@ -1,7 +1,5 @@
 #[cfg(test)]
 extern crate quickcheck;
-#[cfg(test)]
-extern crate rand;
 
 use std::cmp::min;
 
@@ -101,26 +99,24 @@ pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
 mod test {
     use super::{encode, decode};
     use super::Alphabet::{Crockford, RFC4648};
-    use quickcheck;
-    use std;
-    use rand::Rng;
+    use quickcheck::{self, Arbitrary, Gen};
+    use std::fmt::{Debug, Formatter, Error};
 
     #[derive(Clone)]
     struct B32 {
         c: u8
     }
 
-    impl quickcheck::Arbitrary for B32 {
-        fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> B32 {
-            let alphabet = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    impl Arbitrary for B32 {
+        fn arbitrary(g: &mut Gen) -> B32 {
             B32 {
-                c: alphabet[g.gen_range(0, alphabet.len())]
+                c: *g.choose(b"0123456789ABCDEFGHJKMNPQRSTVWXYZ").unwrap()
             }
         }
     }
 
-    impl std::fmt::Debug for B32 {
-        fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+    impl Debug for B32 {
+        fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
             (self.c as char).fmt(f)
         }
     }
