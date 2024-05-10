@@ -5,26 +5,29 @@ use std::cmp::min;
 
 #[derive(Copy, Clone)]
 pub enum Alphabet {
+    Crockford,
     Rfc4648 { padding: bool },
     Rfc4648Lower { padding: bool },
     Rfc4648Hex { padding: bool },
     Rfc4648HexLower { padding: bool },
-    Crockford,
+    Z,
 }
 
+const CROCKFORD: &'static [u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const RFC4648: &'static [u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const RFC4648_LOWER: &'static [u8] = b"abcdefghijklmnopqrstuvwxyz234567";
 const RFC4648_HEX: &'static [u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUV";
 const RFC4648_HEX_LOWER: &'static [u8] = b"0123456789abcdefghijklmnopqrstuv";
-const CROCKFORD_ALPHABET: &'static [u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const Z: &'static [u8] = b"ybndrfg8ejkmcpqxot1uwisza345h769";
 
 pub fn encode(alphabet: Alphabet, data: &[u8]) -> String {
     let (alphabet, padding) = match alphabet {
+        Alphabet::Crockford => (CROCKFORD, false),
         Alphabet::Rfc4648 { padding } => (RFC4648, padding),
         Alphabet::Rfc4648Lower { padding } => (RFC4648_LOWER, padding),
         Alphabet::Rfc4648Hex { padding } => (RFC4648_HEX, padding),
         Alphabet::Rfc4648HexLower { padding } => (RFC4648_HEX_LOWER, padding),
-        Alphabet::Crockford => (CROCKFORD_ALPHABET, false),
+        Alphabet::Z => (Z, false),
     };
     let mut ret = Vec::with_capacity((data.len() + 3) / 4 * 5);
 
@@ -61,6 +64,19 @@ pub fn encode(alphabet: Alphabet, data: &[u8]) -> String {
     String::from_utf8(ret).unwrap()
 }
 
+/*
+     0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  :,  ;,  <,  =,  >,  ?,  @,  A,  B,  C,
+     D,  E,  F,  G,  H,  I,  J,  K,  L,  M,  N,  O,  P,  Q,  R,  S,  T,  U,  V,  W,
+     X,  Y,  Z,  [,  \,  ],  ^,  _,  `,  a,  b,  c,  d,  e,  f,  g,  h,  i,  j,  k,
+     l,  m,  n,  o,  p,  q,  r,  s,  t,  u,  v,  w,  x,  y,  z,
+*/
+
+const CROCKFORD_INV: [i8; 75] = [
+     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12,
+    13, 14, 15, 16, 17,  1, 18, 19,  1, 20, 21,  0, 22, 23, 24, 25, 26, -1, 27, 28,
+    29, 30, 31, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17,  1, 18, 19,
+     1, 20, 21,  0, 22, 23, 24, 25, 26, -1, 27, 28, 29, 30, 31,
+];
 const RFC4648_INV: [i8; 75] = [
     -1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1, -1, -1, -1, -1,  0,  1,  2,
      3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
@@ -109,11 +125,11 @@ const RFC4648_INV_HEX_LOWER_PAD: [i8; 75] = [
     -1, -1, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
     21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1,
 ];
-const CROCKFORD_INV: [i8; 75] = [
-     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12,
-    13, 14, 15, 16, 17,  1, 18, 19,  1, 20, 21,  0, 22, 23, 24, 25, 26, -1, 27, 28,
-    29, 30, 31, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17,  1, 18, 19,
-     1, 20, 21,  0, 22, 23, 24, 25, 26, -1, 27, 28, 29, 30, 31,
+const Z_INV: [i8; 75] = [
+    -1, 18, -1, 25, 26, 27, 30, 29,  7, 31, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, 24,  1, 12,  3,  8,  5,  6, 28, 21,  9, 10,
+    -1, 11,  2, 16, 13, 14,  4, 22, 17, 19, -1, 20, 15,  0, 23,
 ];
 
 pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
@@ -122,11 +138,12 @@ pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
     }
     let data = data.as_bytes();
     let alphabet = match alphabet {
+        Alphabet::Crockford => CROCKFORD_INV, // supports both upper and lower case
         Alphabet::Rfc4648 { padding } => if padding { RFC4648_INV_PAD } else { RFC4648_INV }
         Alphabet::Rfc4648Lower { padding } => if padding { RFC4648_INV_LOWER_PAD } else { RFC4648_INV_LOWER }
         Alphabet::Rfc4648Hex { padding } => if padding { RFC4648_INV_HEX_PAD } else { RFC4648_INV_HEX }
         Alphabet::Rfc4648HexLower { padding } => if padding { RFC4648_INV_HEX_LOWER_PAD } else { RFC4648_INV_HEX_LOWER }
-        Alphabet::Crockford => CROCKFORD_INV, // supports both upper and lower case
+        Alphabet::Z => Z_INV,
     };
     let mut unpadded_data_length = data.len();
     for i in 1..min(6, data.len()) + 1 {
@@ -161,7 +178,7 @@ pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 #[allow(dead_code, unused_attributes)]
 mod test {
-    use super::Alphabet::{Crockford, Rfc4648, Rfc4648Lower, Rfc4648Hex, Rfc4648HexLower };
+    use super::Alphabet::{Crockford, Rfc4648, Rfc4648Lower, Rfc4648Hex, Rfc4648HexLower, Z};
     use super::{decode, encode};
     use quickcheck::{Arbitrary, Gen};
     use std::fmt::{Debug, Error, Formatter};
@@ -394,6 +411,26 @@ mod test {
         assert_eq!(
             encode(Rfc4648HexLower { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83]),
             "v0v7v0o="
+        );
+    }
+
+    #[test]
+    fn masks_z() {
+        assert_eq!(
+            encode(Z, &[0xF8, 0x3E, 0x0F, 0x83, 0xE0]),
+            "9y9y9y9y"
+        );
+        assert_eq!(
+            encode(Z, &[0x07, 0xC1, 0xF0, 0x7C, 0x1F]),
+            "y9y9y9y9"
+        );
+        assert_eq!(
+            decode(Z, "9y9y9y9y").unwrap(),
+            [0xF8, 0x3E, 0x0F, 0x83, 0xE0]
+        );
+        assert_eq!(
+            decode(Z, "y9y9y9y9").unwrap(),
+            [0x07, 0xC1, 0xF0, 0x7C, 0x1F]
         );
     }
 
