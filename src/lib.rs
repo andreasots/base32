@@ -5,16 +5,25 @@ use std::cmp::min;
 
 #[derive(Copy, Clone)]
 pub enum Alphabet {
-    RFC4648 { padding: bool },
+    Rfc4648 { padding: bool },
+    Rfc4648Lower { padding: bool },
+    Rfc4648Hex { padding: bool },
+    Rfc4648HexLower { padding: bool },
     Crockford,
 }
 
-const RFC4648_ALPHABET: &'static [u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const RFC4648: &'static [u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const RFC4648_LOWER: &'static [u8] = b"abcdefghijklmnopqrstuvwxyz234567";
+const RFC4648_HEX: &'static [u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUV";
+const RFC4648_HEX_LOWER: &'static [u8] = b"0123456789abcdefghijklmnopqrstuv";
 const CROCKFORD_ALPHABET: &'static [u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 pub fn encode(alphabet: Alphabet, data: &[u8]) -> String {
     let (alphabet, padding) = match alphabet {
-        Alphabet::RFC4648 { padding } => (RFC4648_ALPHABET, padding),
+        Alphabet::Rfc4648 { padding } => (RFC4648, padding),
+        Alphabet::Rfc4648Lower { padding } => (RFC4648_LOWER, padding),
+        Alphabet::Rfc4648Hex { padding } => (RFC4648_HEX, padding),
+        Alphabet::Rfc4648HexLower { padding } => (RFC4648_HEX_LOWER, padding),
         Alphabet::Crockford => (CROCKFORD_ALPHABET, false),
     };
     let mut ret = Vec::with_capacity((data.len() + 3) / 4 * 5);
@@ -52,13 +61,59 @@ pub fn encode(alphabet: Alphabet, data: &[u8]) -> String {
     String::from_utf8(ret).unwrap()
 }
 
-const RFC4648_INV_ALPHABET: [i8; 43] = [
-    -1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1, 0, -1, -1, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8,
-    9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+const RFC4648_INV: [i8; 75] = [
+    -1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1, -1, -1, -1, -1,  0,  1,  2,
+     3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+    23, 24, 25, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 ];
-const CROCKFORD_INV_ALPHABET: [i8; 43] = [
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17, 1,
-    18, 19, 1, 20, 21, 0, 22, 23, 24, 25, 26, -1, 27, 28, 29, 30, 31,
+const RFC4648_INV_PAD: [i8; 75] = [
+    -1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1,  0, -1, -1, -1,  0,  1,  2,
+     3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+    23, 24, 25, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+];
+const RFC4648_INV_LOWER: [i8; 75] = [
+    -1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,
+    11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+];
+const RFC4648_INV_LOWER_PAD: [i8; 75] = [
+    -1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1,  0, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,
+    11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+];
+const RFC4648_INV_HEX: [i8; 75] = [
+     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12,
+    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+];
+const RFC4648_INV_HEX_PAD: [i8; 75] = [
+     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1,  0, -1, -1, -1, 10, 11, 12,
+    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+];
+const RFC4648_INV_HEX_LOWER: [i8; 75] = [
+     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+    21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1,
+];
+const RFC4648_INV_HEX_LOWER_PAD: [i8; 75] = [
+     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1,  0, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+    21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1,
+];
+const CROCKFORD_INV: [i8; 75] = [
+     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12,
+    13, 14, 15, 16, 17,  1, 18, 19,  1, 20, 21,  0, 22, 23, 24, 25, 26, -1, 27, 28,
+    29, 30, 31, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17,  1, 18, 19,
+     1, 20, 21,  0, 22, 23, 24, 25, 26, -1, 27, 28, 29, 30, 31,
 ];
 
 pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
@@ -67,8 +122,11 @@ pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
     }
     let data = data.as_bytes();
     let alphabet = match alphabet {
-        Alphabet::RFC4648 { .. } => RFC4648_INV_ALPHABET,
-        Alphabet::Crockford => CROCKFORD_INV_ALPHABET,
+        Alphabet::Rfc4648 { padding } => if padding { RFC4648_INV_PAD } else { RFC4648_INV }
+        Alphabet::Rfc4648Lower { padding } => if padding { RFC4648_INV_LOWER_PAD } else { RFC4648_INV_LOWER }
+        Alphabet::Rfc4648Hex { padding } => if padding { RFC4648_INV_HEX_PAD } else { RFC4648_INV_HEX }
+        Alphabet::Rfc4648HexLower { padding } => if padding { RFC4648_INV_HEX_LOWER_PAD } else { RFC4648_INV_HEX_LOWER }
+        Alphabet::Crockford => CROCKFORD_INV, // supports both upper and lower case
     };
     let mut unpadded_data_length = data.len();
     for i in 1..min(6, data.len()) + 1 {
@@ -83,7 +141,7 @@ pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
         let buf = {
             let mut buf = [0u8; 8];
             for (i, &c) in chunk.iter().enumerate() {
-                match alphabet.get(c.to_ascii_uppercase().wrapping_sub(b'0') as usize) {
+                match alphabet.get(c.wrapping_sub(b'0') as usize) {
                     Some(&-1) | None => return None,
                     Some(&value) => buf[i] = value as u8,
                 };
@@ -103,9 +161,9 @@ pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 #[allow(dead_code, unused_attributes)]
 mod test {
-    use super::Alphabet::{Crockford, RFC4648};
+    use super::Alphabet::{Crockford, Rfc4648, Rfc4648Lower, Rfc4648Hex, Rfc4648HexLower };
     use super::{decode, encode};
-    use quickcheck::{self, Arbitrary, Gen};
+    use quickcheck::{Arbitrary, Gen};
     use std::fmt::{Debug, Error, Formatter};
 
     #[derive(Clone)]
@@ -150,48 +208,192 @@ mod test {
     #[test]
     fn masks_rfc4648() {
         assert_eq!(
-            encode(RFC4648 { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            encode(Rfc4648 { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
             "7A7H7A7H"
         );
         assert_eq!(
-            encode(RFC4648 { padding: true }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            encode(Rfc4648 { padding: false }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
             "O7A7O7A7"
         );
         assert_eq!(
-            decode(RFC4648 { padding: true }, "7A7H7A7H").unwrap(),
+            decode(Rfc4648 { padding: false }, "7A7H7A7H").unwrap(),
             [0xF8, 0x3E, 0x7F, 0x83, 0xE7]
         );
         assert_eq!(
-            decode(RFC4648 { padding: true }, "O7A7O7A7").unwrap(),
+            decode(Rfc4648 { padding: false }, "O7A7O7A7").unwrap(),
             [0x77, 0xC1, 0xF7, 0x7C, 0x1F]
         );
         assert_eq!(
-            encode(RFC4648 { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83]),
+            encode(Rfc4648 { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83]),
+            "7A7H7AY"
+        );
+    }
+
+    #[test]
+    fn masks_rfc4648_pad() {
+        assert_eq!(
+            encode(Rfc4648 { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "7A7H7A7H"
+        );
+        assert_eq!(
+            encode(Rfc4648 { padding: true }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "O7A7O7A7"
+        );
+        assert_eq!(
+            decode(Rfc4648 { padding: true }, "7A7H7A7H").unwrap(),
+            [0xF8, 0x3E, 0x7F, 0x83, 0xE7]
+        );
+        assert_eq!(
+            decode(Rfc4648 { padding: true }, "O7A7O7A7").unwrap(),
+            [0x77, 0xC1, 0xF7, 0x7C, 0x1F]
+        );
+        assert_eq!(
+            encode(Rfc4648 { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83]),
             "7A7H7AY="
         );
     }
 
     #[test]
-    fn masks_unpadded_rfc4648() {
+    fn masks_rfc4648_lower() {
         assert_eq!(
-            encode(RFC4648 { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
-            "7A7H7A7H"
+            encode(Rfc4648Lower { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "7a7h7a7h"
         );
         assert_eq!(
-            encode(RFC4648 { padding: false }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
-            "O7A7O7A7"
+            encode(Rfc4648Lower { padding: false }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "o7a7o7a7"
         );
         assert_eq!(
-            decode(RFC4648 { padding: false }, "7A7H7A7H").unwrap(),
+            decode(Rfc4648Lower { padding: false }, "7a7h7a7h").unwrap(),
             [0xF8, 0x3E, 0x7F, 0x83, 0xE7]
         );
         assert_eq!(
-            decode(RFC4648 { padding: false }, "O7A7O7A7").unwrap(),
+            decode(Rfc4648Lower { padding: false }, "o7a7o7a7").unwrap(),
             [0x77, 0xC1, 0xF7, 0x7C, 0x1F]
         );
         assert_eq!(
-            encode(RFC4648 { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83]),
-            "7A7H7AY"
+            encode(Rfc4648Lower { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83]),
+            "7a7h7ay"
+        );
+    }
+
+    #[test]
+    fn masks_rfc4648_lower_pad() {
+        assert_eq!(
+            encode(Rfc4648Lower { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "7a7h7a7h"
+        );
+        assert_eq!(
+            encode(Rfc4648Lower { padding: true }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "o7a7o7a7"
+        );
+        assert_eq!(
+            decode(Rfc4648Lower { padding: true }, "7a7h7a7h").unwrap(),
+            [0xF8, 0x3E, 0x7F, 0x83, 0xE7]
+        );
+        assert_eq!(
+            decode(Rfc4648Lower { padding: true }, "o7a7o7a7").unwrap(),
+            [0x77, 0xC1, 0xF7, 0x7C, 0x1F]
+        );
+        assert_eq!(
+            encode(Rfc4648Lower { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83]),
+            "7a7h7ay="
+        );
+    }
+
+    #[test]
+    fn masks_rfc4648_hex() {
+        assert_eq!(
+            encode(Rfc4648Hex { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "V0V7V0V7"
+        );
+        assert_eq!(
+            encode(Rfc4648Hex { padding: false }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "EV0VEV0V"
+        );
+        assert_eq!(
+            decode(Rfc4648Hex { padding: false }, "7A7H7A7H").unwrap(),
+            [0x3A, 0x8F, 0x13, 0xA8, 0xF1]
+        );
+        assert_eq!(
+            decode(Rfc4648Hex { padding: false }, "O7A7O7A7").unwrap(),
+            [0xC1, 0xD4, 0x7C, 0x1D, 0x47]
+        );
+        assert_eq!(
+            encode(Rfc4648Hex { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83]),
+            "V0V7V0O"
+        );
+    }
+
+    #[test]
+    fn masks_rfc4648_hex_pad() {
+        assert_eq!(
+            encode(Rfc4648Hex { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "V0V7V0V7"
+        );
+        assert_eq!(
+            encode(Rfc4648Hex { padding: true }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "EV0VEV0V"
+        );
+        assert_eq!(
+            decode(Rfc4648Hex { padding: true }, "7A7H7A7H").unwrap(),
+            [0x3A, 0x8F, 0x13, 0xA8, 0xF1]
+        );
+        assert_eq!(
+            decode(Rfc4648Hex { padding: true }, "O7A7O7A7").unwrap(),
+            [0xC1, 0xD4, 0x7C, 0x1D, 0x47]
+        );
+        assert_eq!(
+            encode(Rfc4648Hex { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83]),
+            "V0V7V0O="
+        );
+    }
+
+    #[test]
+    fn masks_rfc4648_hex_lower() {
+        assert_eq!(
+            encode(Rfc4648HexLower { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "v0v7v0v7"
+        );
+        assert_eq!(
+            encode(Rfc4648HexLower { padding: false }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "ev0vev0v"
+        );
+        assert_eq!(
+            decode(Rfc4648HexLower { padding: false }, "7a7h7a7h").unwrap(),
+            [0x3A, 0x8F, 0x13, 0xA8, 0xF1]
+        );
+        assert_eq!(
+            decode(Rfc4648HexLower { padding: false }, "o7a7o7a7").unwrap(),
+            [0xC1, 0xD4, 0x7C, 0x1D, 0x47]
+        );
+        assert_eq!(
+            encode(Rfc4648HexLower { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83]),
+            "v0v7v0o"
+        );
+    }
+
+    #[test]
+    fn masks_rfc4648_hex_lower_pad() {
+        assert_eq!(
+            encode(Rfc4648HexLower { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "v0v7v0v7"
+        );
+        assert_eq!(
+            encode(Rfc4648HexLower { padding: true }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "ev0vev0v"
+        );
+        assert_eq!(
+            decode(Rfc4648HexLower { padding: true }, "7a7h7a7h").unwrap(),
+            [0x3A, 0x8F, 0x13, 0xA8, 0xF1]
+        );
+        assert_eq!(
+            decode(Rfc4648HexLower { padding: true }, "o7a7o7a7").unwrap(),
+            [0xC1, 0xD4, 0x7C, 0x1D, 0x47]
+        );
+        assert_eq!(
+            encode(Rfc4648HexLower { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83]),
+            "v0v7v0o="
         );
     }
 
@@ -200,7 +402,7 @@ mod test {
         let num_padding = [0, 6, 4, 3, 1];
         for i in 1..6 {
             let encoded = encode(
-                RFC4648 { padding: true },
+                Rfc4648 { padding: true },
                 (0..(i as u8)).collect::<Vec<u8>>().as_ref(),
             );
             assert_eq!(encoded.len(), 8);
@@ -225,8 +427,8 @@ mod test {
     fn invertible_rfc4648() {
         fn test(data: Vec<u8>) -> bool {
             decode(
-                RFC4648 { padding: true },
-                encode(RFC4648 { padding: true }, data.as_ref()).as_ref(),
+                Rfc4648 { padding: true },
+                encode(Rfc4648 { padding: true }, data.as_ref()).as_ref(),
             )
             .unwrap()
                 == data
@@ -237,8 +439,8 @@ mod test {
     fn invertible_unpadded_rfc4648() {
         fn test(data: Vec<u8>) -> bool {
             decode(
-                RFC4648 { padding: false },
-                encode(RFC4648 { padding: false }, data.as_ref()).as_ref(),
+                Rfc4648 { padding: false },
+                encode(Rfc4648 { padding: false }, data.as_ref()).as_ref(),
             )
             .unwrap()
                 == data
@@ -269,11 +471,11 @@ mod test {
 
     #[test]
     fn invalid_chars_rfc4648() {
-        assert_eq!(decode(RFC4648 { padding: true }, ","), None)
+        assert_eq!(decode(Rfc4648 { padding: true }, ","), None)
     }
 
     #[test]
     fn invalid_chars_unpadded_rfc4648() {
-        assert_eq!(decode(RFC4648 { padding: false }, ","), None)
+        assert_eq!(decode(Rfc4648 { padding: false }, ","), None)
     }
 }
