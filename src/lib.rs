@@ -6,6 +6,10 @@ use std::cmp::min;
 #[derive(Copy, Clone)]
 pub enum Alphabet {
     Crockford,
+    RFC4648 { padding: bool },
+    RFC4648Lower { padding: bool },
+    RFC4648Hex { padding: bool },
+    RFC4648HexLower { padding: bool },
     Rfc4648 { padding: bool },
     Rfc4648Lower { padding: bool },
     Rfc4648Hex { padding: bool },
@@ -23,10 +27,10 @@ const Z: &'static [u8] = b"ybndrfg8ejkmcpqxot1uwisza345h769";
 pub fn encode(alphabet: Alphabet, data: &[u8]) -> String {
     let (alphabet, padding) = match alphabet {
         Alphabet::Crockford => (CROCKFORD, false),
-        Alphabet::Rfc4648 { padding } => (RFC4648, padding),
-        Alphabet::Rfc4648Lower { padding } => (RFC4648_LOWER, padding),
-        Alphabet::Rfc4648Hex { padding } => (RFC4648_HEX, padding),
-        Alphabet::Rfc4648HexLower { padding } => (RFC4648_HEX_LOWER, padding),
+        Alphabet::Rfc4648 { padding } | Alphabet::RFC4648 { padding }  => (RFC4648, padding),
+        Alphabet::Rfc4648Lower { padding } | Alphabet::RFC4648Lower { padding } => (RFC4648_LOWER, padding),
+        Alphabet::Rfc4648Hex { padding } | Alphabet::RFC4648Hex { padding } => (RFC4648_HEX, padding),
+        Alphabet::Rfc4648HexLower { padding } | Alphabet::RFC4648HexLower { padding }=> (RFC4648_HEX_LOWER, padding),
         Alphabet::Z => (Z, false),
     };
     let mut ret = Vec::with_capacity((data.len() + 3) / 4 * 5);
@@ -139,10 +143,10 @@ pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
     let data = data.as_bytes();
     let alphabet = match alphabet {
         Alphabet::Crockford => CROCKFORD_INV, // supports both upper and lower case
-        Alphabet::Rfc4648 { padding } => if padding { RFC4648_INV_PAD } else { RFC4648_INV }
-        Alphabet::Rfc4648Lower { padding } => if padding { RFC4648_INV_LOWER_PAD } else { RFC4648_INV_LOWER }
-        Alphabet::Rfc4648Hex { padding } => if padding { RFC4648_INV_HEX_PAD } else { RFC4648_INV_HEX }
-        Alphabet::Rfc4648HexLower { padding } => if padding { RFC4648_INV_HEX_LOWER_PAD } else { RFC4648_INV_HEX_LOWER }
+        Alphabet::Rfc4648 { padding } | Alphabet::RFC4648 { padding } => if padding { RFC4648_INV_PAD } else { RFC4648_INV }
+        Alphabet::Rfc4648Lower { padding } | Alphabet::RFC4648Lower { padding }=> if padding { RFC4648_INV_LOWER_PAD } else { RFC4648_INV_LOWER }
+        Alphabet::Rfc4648Hex { padding } | Alphabet::RFC4648Hex { padding } => if padding { RFC4648_INV_HEX_PAD } else { RFC4648_INV_HEX }
+        Alphabet::Rfc4648HexLower { padding } | Alphabet::RFC4648HexLower { padding } => if padding { RFC4648_INV_HEX_LOWER_PAD } else { RFC4648_INV_HEX_LOWER }
         Alphabet::Z => Z_INV,
     };
     let mut unpadded_data_length = data.len();
