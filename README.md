@@ -1,21 +1,27 @@
-# base32 [![Build Status](https://travis-ci.org/andreasots/base32.svg?branch=master)](https://travis-ci.org/andreasots/base32)
+# base32
 
-This library lets you encode and decode in either [RFC4648 Base32](http://en.wikipedia.org/wiki/Base32#RFC_4648_Base32_alphabet) or in [Crockford Base32](http://en.wikipedia.org/wiki/Base32#Crockford.27s_Base32).
+This library lets you encode and decode various Base32 variants.
 
 # Usage
 
 ```rust
-// crockford base32
-assert_eq!(encode(CrockfordBase32, [0xF8, 0x3E, 0x0F, 0x83, 0xE0]), Vec::from_slice("Z0Z0Z0Z0".to_ascii()));
-assert_eq!(decode(CrockfordBase32, "Z0Z0Z0Z0".to_ascii()).unwrap(), vec![0xF8, 0x3E, 0x0F, 0x83, 0xE0]);
+use base32::Alphabet;
 
-// rfc4648 base32
-assert_eq!(encode(RFC4648Base32, [0xF8, 0x3E, 0x7F, 0x83, 0xE7]), Vec::from_slice("7A7H7A7H".to_ascii()));
-assert_eq!(decode(RFC4648Base32, "7A7H7A7H".to_ascii()).unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
+// Crockford's Base32
+assert_eq!(base32::encode(Alphabet::Crockford, &[0xF8, 0x3E, 0x0F, 0x83, 0xE0]), "Z0Z0Z0Z0");
+assert_eq!(base32::decode(Alphabet::Crockford, "Z0Z0Z0Z0").unwrap(), vec![0xF8, 0x3E, 0x0F, 0x83, 0xE0]);
 
-// rfc4648 base32 without padding characters (=)
-assert_eq!(encode(UnpaddedRFC4648Base32, [0xF8, 0x3E, 0x7F, 0x83, 0xE7]), Vec::from_slice("7A7H7A7H".to_ascii()));
-assert_eq!(decode(UnpaddedRFC4648Base32, "7A7H7A7H".to_ascii()).unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
+// RFC4648
+assert_eq!(base32::encode(Alphabet::Rfc4648 { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "7A7H7A7H");
+assert_eq!(base32::decode(Alphabet::Rfc4648 { padding: true }, "7A7H7A7H").unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
+
+// RFC4648 base32hex
+assert_eq!(base32::encode(Alphabet::Rfc4648Hex { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "V0V7V0V7");
+assert_eq!(base32::decode(Alphabet::Rfc4648Hex { padding: true }, "V0V7V0V7").unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
+
+// z-base-32
+assert_eq!(base32::encode(Alphabet::Z, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "9y989y98");
+assert_eq!(base32::decode(Alphabet::Z, "9y989y98").unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
 ```
 
 ## License

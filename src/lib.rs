@@ -516,3 +516,7 @@ mod test {
         assert_eq!(decode(Rfc4648 { padding: false }, ","), None)
     }
 }
+
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct Readme;
