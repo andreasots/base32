@@ -1,6 +1,6 @@
 # base32
 
-This library lets you encode and decode various Base32 variants.
+This library lets you encode and decode various Base32 variants. `#[no_std]` compatible but requires a global allocator with the `alloc` crate.
 
 # Usage
 
