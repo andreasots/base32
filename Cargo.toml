@@ -1,12 +1,12 @@
 [package]
-
 name = "base32"
-version = "0.5.0"
+version = "0.5.1"
 authors = [ "Andreas Ots <qrpth@qrpth.eu>", "Tim Dumol <tim@timdumol.com>", "Dave Grantham <dwg@linuxprogrammer.org>" ]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/andreasots/base32"
 description = "Base32 encoder/decoder for Rust"
-categories = ["encoding", "parser-implementations"]
+keywords = ["base32", "encode", "decode", "no_std"]
+categories = ["encoding", "parser-implementations", "no-std"]
 
 [lib]
 name = "base32"
