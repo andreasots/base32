@@ -1,27 +1,25 @@
 # base32
 
-This library lets you encode and decode various Base32 variants. `#[no_std]` compatible but requires a global allocator with the `alloc` crate.
+This library lets you encode and decode various Base32 variants. `#[no_std]` compatible and optionally uses the `alloc` crate.
 
 # Usage
 
 ```rust
-use base32::Alphabet;
-
 // Crockford's Base32
-assert_eq!(base32::encode(Alphabet::Crockford, &[0xF8, 0x3E, 0x0F, 0x83, 0xE0]), "Z0Z0Z0Z0");
-assert_eq!(base32::decode(Alphabet::Crockford, "Z0Z0Z0Z0").unwrap(), vec![0xF8, 0x3E, 0x0F, 0x83, 0xE0]);
+assert_eq!(base32::CROCKFORD.encode(&[0xF8, 0x3E, 0x0F, 0x83, 0xE0]), "Z0Z0Z0Z0");
+assert_eq!(base32::CROCKFORD.decode("Z0Z0Z0Z0").unwrap(), vec![0xF8, 0x3E, 0x0F, 0x83, 0xE0]);
 
 // RFC4648
-assert_eq!(base32::encode(Alphabet::Rfc4648 { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "7A7H7A7H");
-assert_eq!(base32::decode(Alphabet::Rfc4648 { padding: true }, "7A7H7A7H").unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
+assert_eq!(base32::RFC4648.encode(&[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "7A7H7A7H");
+assert_eq!(base32::RFC4648.decode("7A7H7A7H").unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
 
 // RFC4648 base32hex
-assert_eq!(base32::encode(Alphabet::Rfc4648Hex { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "V0V7V0V7");
-assert_eq!(base32::decode(Alphabet::Rfc4648Hex { padding: true }, "V0V7V0V7").unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
+assert_eq!(base32::RFC4648_HEX.encode(&[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "V0V7V0V7");
+assert_eq!(base32::RFC4648_HEX.decode("V0V7V0V7").unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
 
 // z-base-32
-assert_eq!(base32::encode(Alphabet::Z, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "9y989y98");
-assert_eq!(base32::decode(Alphabet::Z, "9y989y98").unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
+assert_eq!(base32::Z.encode(&[0xF8, 0x3E, 0x7F, 0x83, 0xE7]), "9y989y98");
+assert_eq!(base32::Z.decode("9y989y98").unwrap(), vec![0xF8, 0x3E, 0x7F, 0x83, 0xE7]);
 ```
 
 ## License

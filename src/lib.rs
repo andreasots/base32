@@ -1,195 +1,445 @@
 #![no_std]
+#![deny(missing_docs)]
 
+//! Encoders and decoders for various Base32 variants.
+//!
+//! # Examples
+//! Predefined encodings are provided as constants of type `Encoding` which provides encoding and decoding functions.
+//! Both owned and in-place functions are available.
+//!
+//! ```rust
+//! let output = base32::RFC4648.encode(b"Hello, world!");
+//! assert_eq!(output, "JBSWY3DPFQQHO33SNRSCC===");
+//! ```
+//!
+//! ```rust
+//! let mut output = vec![0; 13];
+//! base32::CROCKFORD.decode_buf("91JPRV3F5GG7EVVJDHJ22", &mut output).unwrap();
+//! assert_eq!(output, b"Hello, world!");
+//! ```
+//!
+//! You can also define your own Base32 encoding.
+//! ```rust
+//! let encoding = base32::Encoding::new(*b"0123456789aBcDeFgHiJkLmNoPqRsTuV")
+//!     .with_symbol(b'$', 28)
+//!     .with_symbol(b'w', 31)
+//!     .with_padding(b'+')
+//!     .with_ignore_case()
+//!     .with_reversed();
+//! let output = encoding.encode(b"Hello, world!");
+//! assert_eq!(output, "45i6osJFesg2oRRcDHikg+++");
+//! let output = encoding.decode("45i6O$JFESG2ORRCDHikg+++").unwrap();
+//! assert_eq!(output, b"Hello, world!");
+//! ```
+
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(test)]
-extern crate quickcheck;
-
+#[cfg(feature = "alloc")]
 use alloc::string::String;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
-use core::cmp::min;
+use core::fmt::Display;
 
-#[derive(Copy, Clone)]
-pub enum Alphabet {
-    Crockford,
-    Rfc4648 { padding: bool },
-    Rfc4648Lower { padding: bool },
-    Rfc4648Hex { padding: bool },
-    Rfc4648HexLower { padding: bool },
-    Z,
+/// A Base32 encoding.
+///
+/// There are predefined encodings available at the crate root like [`RFC4846`] and you can also define your own custom encodings.
+pub struct Encoding {
+    alphabet: [u8; 32],
+    inv_alphabet: [u8; 128],
+    padding: Option<u8>,
+    reversed: bool,
 }
 
-const CROCKFORD: &'static [u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-const RFC4648: &'static [u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-const RFC4648_LOWER: &'static [u8] = b"abcdefghijklmnopqrstuvwxyz234567";
-const RFC4648_HEX: &'static [u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUV";
-const RFC4648_HEX_LOWER: &'static [u8] = b"0123456789abcdefghijklmnopqrstuv";
-const Z: &'static [u8] = b"ybndrfg8ejkmcpqxot1uwisza345h769";
-
-pub fn encode(alphabet: Alphabet, data: &[u8]) -> String {
-    let (alphabet, padding) = match alphabet {
-        Alphabet::Crockford => (CROCKFORD, false),
-        Alphabet::Rfc4648 { padding } => (RFC4648, padding),
-        Alphabet::Rfc4648Lower { padding } => (RFC4648_LOWER, padding),
-        Alphabet::Rfc4648Hex { padding } => (RFC4648_HEX, padding),
-        Alphabet::Rfc4648HexLower { padding } => (RFC4648_HEX_LOWER, padding),
-        Alphabet::Z => (Z, false),
-    };
-    let mut ret = Vec::with_capacity((data.len() + 3) / 4 * 5);
-
-    for chunk in data.chunks(5) {
-        let buf = {
-            let mut buf = [0u8; 5];
-            for (i, &b) in chunk.iter().enumerate() {
-                buf[i] = b;
-            }
-            buf
+impl Encoding {
+    /// Create a new Base32 encoding.
+    ///
+    /// The passed alphabet is always used for encoding.
+    ///
+    /// By default padding is disabled and the bytes are encoded left-to-right.
+    pub const fn new(alphabet: [u8; 32]) -> Self {
+        let mut encoder = Self {
+            alphabet,
+            inv_alphabet: [255; _],
+            padding: None,
+            reversed: false,
         };
-        ret.push(alphabet[((buf[0] & 0xF8) >> 3) as usize]);
-        ret.push(alphabet[(((buf[0] & 0x07) << 2) | ((buf[1] & 0xC0) >> 6)) as usize]);
-        ret.push(alphabet[((buf[1] & 0x3E) >> 1) as usize]);
-        ret.push(alphabet[(((buf[1] & 0x01) << 4) | ((buf[2] & 0xF0) >> 4)) as usize]);
-        ret.push(alphabet[(((buf[2] & 0x0F) << 1) | (buf[3] >> 7)) as usize]);
-        ret.push(alphabet[((buf[3] & 0x7C) >> 2) as usize]);
-        ret.push(alphabet[(((buf[3] & 0x03) << 3) | ((buf[4] & 0xE0) >> 5)) as usize]);
-        ret.push(alphabet[(buf[4] & 0x1F) as usize]);
+
+        let mut value = 0;
+        while value < alphabet.len() {
+            encoder = encoder.with_symbol(alphabet[value], value as u8);
+            value += 1;
+        }
+
+        encoder
     }
 
-    if data.len() % 5 != 0 {
-        let len = ret.len();
-        let num_extra = 8 - (data.len() % 5 * 8 + 4) / 5;
-        if padding {
-            for i in 1..num_extra + 1 {
-                ret[len - i] = b'=';
+    /// Add an extra symbol that the decoder will recognise.
+    ///
+    /// This function panics if `symbol` is greater than 127 or `value` is greater than 31;
+    pub const fn with_symbol(mut self, symbol: u8, value: u8) -> Self {
+        assert!(symbol < 128);
+        assert!(value < 32);
+
+        self.inv_alphabet[symbol as usize] = value;
+
+        self
+    }
+
+    /// Make the encoding case-insensitive.
+    ///
+    /// Note: symbols added after this function is called will still be case-sensitive.
+    pub const fn with_ignore_case(mut self) -> Self {
+        let mut c = 0u8;
+
+        while c < 128 {
+            if self.inv_alphabet[c as usize] != 255 {
+                if c.is_ascii_lowercase() {
+                    self.inv_alphabet[c.to_ascii_uppercase() as usize] =
+                        self.inv_alphabet[c as usize];
+                } else if c.is_ascii_uppercase() {
+                    self.inv_alphabet[c.to_ascii_lowercase() as usize] =
+                        self.inv_alphabet[c as usize];
+                }
+            }
+
+            c += 1;
+        }
+
+        self
+    }
+
+    /// Specify the padding symbol used by this encoding.
+    ///
+    /// By default no padding is used.
+    pub const fn with_padding(mut self, padding: u8) -> Self {
+        self.padding = Some(padding);
+
+        self
+    }
+
+    /// Process the input from right-to-left.
+    pub const fn with_reversed(mut self) -> Self {
+        self.reversed = true;
+
+        self
+    }
+
+    /// Get the alphabet used by this encoding.
+    ///
+    /// Does not return extra symbols added with [`with_symbol()`].
+    pub const fn alphabet(&self) -> &[u8] {
+        &self.alphabet
+    }
+
+    /// Get the length of the buffer needed to encode an input of `length` bytes.
+    ///
+    /// Useful for determining the size of the buffer needed for [`encode_buf()`].
+    pub fn encoded_length(&self, length: usize) -> usize {
+        let num_chunks = length.div_ceil(5);
+        let padding_len = if length % 5 > 0 {
+            8 - (length % 5 * 8).div_ceil(5)
+        } else {
+            0
+        };
+
+        if self.padding.is_some() {
+            num_chunks * 8
+        } else {
+            num_chunks * 8 - padding_len
+        }
+    }
+
+    /// Encode `data` with this encoding.
+    #[cfg(feature = "alloc")]
+    pub fn encode(&self, data: &[u8]) -> String {
+        let mut ret = alloc::vec![0; self.encoded_length(data.len())];
+
+        self.encode_buf(data, &mut ret).unwrap();
+
+        String::from_utf8(ret).unwrap()
+    }
+
+    fn encode_chunk(&self, chunk: [u8; 5]) -> [u8; 8] {
+        [
+            self.alphabet[((chunk[0] & 0xF8) >> 3) as usize],
+            self.alphabet[(((chunk[0] & 0x07) << 2) | ((chunk[1] & 0xC0) >> 6)) as usize],
+            self.alphabet[((chunk[1] & 0x3E) >> 1) as usize],
+            self.alphabet[(((chunk[1] & 0x01) << 4) | ((chunk[2] & 0xF0) >> 4)) as usize],
+            self.alphabet[(((chunk[2] & 0x0F) << 1) | (chunk[3] >> 7)) as usize],
+            self.alphabet[((chunk[3] & 0x7C) >> 2) as usize],
+            self.alphabet[(((chunk[3] & 0x03) << 3) | ((chunk[4] & 0xE0) >> 5)) as usize],
+            self.alphabet[(chunk[4] & 0x1F) as usize],
+        ]
+    }
+
+    /// Encode `data` with this encoding into `buf`.
+    pub fn encode_buf<'a>(&self, data: &[u8], buf: &'a mut [u8]) -> Result<&'a mut [u8], Error> {
+        let padding_len = if data.len() % 5 != 0 {
+            8 - (data.len() % 5 * 8).div_ceil(5)
+        } else {
+            0
+        };
+        let encoded_len = self.encoded_length(data.len());
+
+        let Some(buf) = buf.get_mut(..encoded_len) else {
+            return Err(Error::BufferTooSmall {
+                expected: encoded_len,
+            });
+        };
+
+        for (dst, chunk) in buf.chunks_mut(8).zip(Chunker::new(data, self.reversed, 0)) {
+            dst.copy_from_slice(&self.encode_chunk(chunk)[..dst.len()]);
+        }
+
+        if let Some(padding) = self.padding {
+            let buf_len = buf.len();
+            buf[buf_len - padding_len..].fill(padding);
+        }
+
+        Ok(buf)
+    }
+
+    /// Get the length of the buffer needed to decode `data`.
+    ///
+    /// Useful for determining the size of the buffer needed for [`decode_buf()`].
+    ///
+    /// Returns an error if the length or padding are invalid.
+    pub fn decoded_length(&self, data: &str) -> Result<usize, Error> {
+        let (full_chunks, padding_len) = if let Some(padding) = self.padding {
+            if data.len() % 8 != 0 {
+                return Err(Error::InvalidLength);
+            }
+
+            let padding_len = data.bytes().rev().take_while(|b| *b == padding).count();
+
+            if padding_len > 0 {
+                (data.len() / 8 - 1, padding_len)
+            } else {
+                (data.len() / 8, 0)
             }
         } else {
-            ret.truncate(len - num_extra);
+            if data.len() % 8 == 0 {
+                (data.len() / 8, 0)
+            } else {
+                (data.len() / 8, 8 - data.len() % 8)
+            }
+        };
+
+        if ![0, 6, 4, 3, 1].contains(&padding_len) {
+            if self.padding.is_some() {
+                return Err(Error::InvalidPadding);
+            } else {
+                return Err(Error::InvalidLength);
+            }
         }
+
+        Ok(full_chunks * 5
+            + if padding_len > 0 {
+                (8 - padding_len) * 5 / 8
+            } else {
+                0
+            })
     }
 
-    String::from_utf8(ret).unwrap()
-}
-
-/*
-     0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  :,  ;,  <,  =,  >,  ?,  @,  A,  B,  C,
-     D,  E,  F,  G,  H,  I,  J,  K,  L,  M,  N,  O,  P,  Q,  R,  S,  T,  U,  V,  W,
-     X,  Y,  Z,  [,  \,  ],  ^,  _,  `,  a,  b,  c,  d,  e,  f,  g,  h,  i,  j,  k,
-     l,  m,  n,  o,  p,  q,  r,  s,  t,  u,  v,  w,  x,  y,  z,
-*/
-
-const CROCKFORD_INV: [i8; 75] = [
-     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12,
-    13, 14, 15, 16, 17,  1, 18, 19,  1, 20, 21,  0, 22, 23, 24, 25, 26, -1, 27, 28,
-    29, 30, 31, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17,  1, 18, 19,
-     1, 20, 21,  0, 22, 23, 24, 25, 26, -1, 27, 28, 29, 30, 31,
-];
-const RFC4648_INV: [i8; 75] = [
-    -1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1, -1, -1, -1, -1,  0,  1,  2,
-     3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-    23, 24, 25, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-];
-const RFC4648_INV_PAD: [i8; 75] = [
-    -1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1,  0, -1, -1, -1,  0,  1,  2,
-     3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-    23, 24, 25, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-];
-const RFC4648_INV_LOWER: [i8; 75] = [
-    -1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,
-    11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
-];
-const RFC4648_INV_LOWER_PAD: [i8; 75] = [
-    -1, -1, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1, -1,  0, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,
-    11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
-];
-const RFC4648_INV_HEX: [i8; 75] = [
-     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12,
-    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-];
-const RFC4648_INV_HEX_PAD: [i8; 75] = [
-     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1,  0, -1, -1, -1, 10, 11, 12,
-    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-];
-const RFC4648_INV_HEX_LOWER: [i8; 75] = [
-     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-    21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1,
-];
-const RFC4648_INV_HEX_LOWER_PAD: [i8; 75] = [
-     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1,  0, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-    21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, -1, -1, -1, -1,
-];
-const Z_INV: [i8; 75] = [
-    -1, 18, -1, 25, 26, 27, 30, 29,  7, 31, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, 24,  1, 12,  3,  8,  5,  6, 28, 21,  9, 10,
-    -1, 11,  2, 16, 13, 14,  4, 22, 17, 19, -1, 20, 15,  0, 23,
-];
-
-pub fn decode(alphabet: Alphabet, data: &str) -> Option<Vec<u8>> {
-    if !data.is_ascii() {
-        return None;
+    #[cfg(feature = "alloc")]
+    /// Decode `data` with this encoding.
+    pub fn decode(&self, data: &str) -> Result<Vec<u8>, Error> {
+        let mut ret = alloc::vec![0; self.decoded_length(data)?];
+        self.decode_buf(data, &mut ret)?;
+        Ok(ret)
     }
-    let data = data.as_bytes();
-    let alphabet = match alphabet {
-        Alphabet::Crockford => CROCKFORD_INV, // supports both upper and lower case
-        Alphabet::Rfc4648 { padding } => if padding { RFC4648_INV_PAD } else { RFC4648_INV }
-        Alphabet::Rfc4648Lower { padding } => if padding { RFC4648_INV_LOWER_PAD } else { RFC4648_INV_LOWER }
-        Alphabet::Rfc4648Hex { padding } => if padding { RFC4648_INV_HEX_PAD } else { RFC4648_INV_HEX }
-        Alphabet::Rfc4648HexLower { padding } => if padding { RFC4648_INV_HEX_LOWER_PAD } else { RFC4648_INV_HEX_LOWER }
-        Alphabet::Z => Z_INV,
-    };
-    let mut unpadded_data_length = data.len();
-    for i in 1..min(6, data.len()) + 1 {
-        if data[data.len() - i] != b'=' {
-            break;
-        }
-        unpadded_data_length -= 1;
-    }
-    let output_length = unpadded_data_length * 5 / 8;
-    let mut ret = Vec::with_capacity((output_length + 4) / 5 * 5);
-    for chunk in data.chunks(8) {
-        let buf = {
+
+    fn decode_chunk(&self, chunk_index: usize, chunk: [u8; 8]) -> Result<[u8; 5], Error> {
+        let decoded = {
             let mut buf = [0u8; 8];
-            for (i, &c) in chunk.iter().enumerate() {
-                match alphabet.get(c.wrapping_sub(b'0') as usize) {
-                    Some(&-1) | None => return None,
-                    Some(&value) => buf[i] = value as u8,
+            for (i, c) in chunk.into_iter().enumerate() {
+                match self.inv_alphabet.get(c as usize) {
+                    Some(&255) | None => {
+                        return Err(Error::InvalidSymbol {
+                            offset: chunk_index * 8 + i,
+                            symbol: c,
+                        });
+                    }
+                    Some(&value) => buf[i] = value,
                 };
             }
             buf
         };
-        ret.push((buf[0] << 3) | (buf[1] >> 2));
-        ret.push((buf[1] << 6) | (buf[2] << 1) | (buf[3] >> 4));
-        ret.push((buf[3] << 4) | (buf[4] >> 1));
-        ret.push((buf[4] << 7) | (buf[5] << 2) | (buf[6] >> 3));
-        ret.push((buf[6] << 5) | buf[7]);
+        Ok([
+            (decoded[0] << 3) | (decoded[1] >> 2),
+            (decoded[1] << 6) | (decoded[2] << 1) | (decoded[3] >> 4),
+            (decoded[3] << 4) | (decoded[4] >> 1),
+            (decoded[4] << 7) | (decoded[5] << 2) | (decoded[6] >> 3),
+            (decoded[6] << 5) | decoded[7],
+        ])
     }
-    ret.truncate(output_length);
-    Some(ret)
+
+    /// Decode `data` with this encoding into `buf`.
+    pub fn decode_buf<'a>(&self, data: &str, buf: &'a mut [u8]) -> Result<&'a mut [u8], Error> {
+        let output_length = self.decoded_length(data)?;
+        let Some(ret) = buf.get_mut(..output_length) else {
+            return Err(Error::BufferTooSmall {
+                expected: output_length,
+            });
+        };
+
+        let last_chunk_index = data.len().div_ceil(8).saturating_sub(1);
+
+        for (chunk_index, (dst, mut chunk)) in ret
+            .chunks_mut(5)
+            .zip(Chunker::new(data.as_bytes(), false, self.alphabet()[0]))
+            .enumerate()
+        {
+            if chunk_index == last_chunk_index {
+                if let Some(padding) = self.padding {
+                    for b in chunk.iter_mut().rev() {
+                        if *b == padding {
+                            *b = self.alphabet[0];
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            dst.copy_from_slice(&self.decode_chunk(chunk_index, chunk)?[..dst.len()]);
+        }
+
+        if self.reversed {
+            ret.reverse();
+        }
+
+        Ok(ret)
+    }
 }
 
-#[cfg(test)]
-#[allow(dead_code, unused_attributes)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Decoding error
+pub enum Error {
+    /// Invalid symbol found in input
+    InvalidSymbol {
+        /// Index of the invalid symbol
+        offset: usize,
+        /// The invalid symbol
+        symbol: u8,
+    },
+    /// Length of the input is invalid
+    InvalidLength,
+    /// Padding is invalid
+    InvalidPadding,
+    /// Passed buffer is too small
+    BufferTooSmall {
+        /// Minimum buffer size required
+        expected: usize,
+    },
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidSymbol { offset, symbol } => {
+                core::write!(
+                    f,
+                    "invalid symbol {} (0x{symbol:02X}) at offset {offset}",
+                    char::from(*symbol)
+                )
+            }
+            Self::InvalidLength => f.write_str("invalid length"),
+            Self::InvalidPadding => f.write_str("invalid padding"),
+            Self::BufferTooSmall { expected } => core::write!(
+                f,
+                "passed buffer is too small, expected at least {expected} bytes"
+            ),
+        }
+    }
+}
+
+impl core::error::Error for Error {}
+
+struct Chunker<'a, const N: usize> {
+    slice: &'a [u8],
+    reverse: bool,
+    pad: u8,
+}
+
+impl<'a, const N: usize> Chunker<'a, N> {
+    fn new(slice: &'a [u8], reverse: bool, pad: u8) -> Self {
+        Self {
+            slice,
+            reverse,
+            pad,
+        }
+    }
+}
+
+impl<const N: usize> Iterator for Chunker<'_, N> {
+    type Item = [u8; N];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.slice.is_empty() {
+            return None;
+        }
+
+        let mut ret = [self.pad; N];
+        let len = N.min(self.slice.len());
+
+        if !self.reverse {
+            let (chunk, rest) = self.slice.split_at(len);
+            ret[..len].copy_from_slice(&chunk);
+            self.slice = rest;
+        } else {
+            let (rest, chunk) = self.slice.split_at(self.slice.len() - len);
+            ret[..len].copy_from_slice(&chunk);
+            ret[..len].reverse();
+            self.slice = rest;
+        }
+
+        Some(ret)
+    }
+}
+
+/// [Crockford's Base32 encoding](https://www.crockford.com/base32.html)
+pub const CROCKFORD: Encoding = Encoding::new(*b"0123456789ABCDEFGHJKMNPQRSTVWXYZ")
+    .with_symbol(b'I', 1)
+    .with_symbol(b'L', 1)
+    .with_symbol(b'O', 0)
+    .with_ignore_case();
+
+/// "base32" encoding according to [RFC 4648 section 6](https://www.rfc-editor.org/rfc/rfc4648#section-6) but without padding.
+pub const RFC4648_NOPAD: Encoding = Encoding::new(*b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567");
+/// "base32" encoding according to [RFC 4648 section 6](https://www.rfc-editor.org/rfc/rfc4648#section-6).
+pub const RFC4648: Encoding = RFC4648_NOPAD.with_padding(b'=');
+
+/// Lowercased version of "base32" according to [RFC 4648 section 6](https://www.rfc-editor.org/rfc/rfc4648#section-6) encoding without padding.
+pub const RFC4648_LOWER_NOPAD: Encoding = Encoding::new(*b"abcdefghijklmnopqrstuvwxyz234567");
+/// Lowercased version of "base32" according to [RFC 4648 section 6](https://www.rfc-editor.org/rfc/rfc4648#section-6) encoding.
+pub const RFC4648_LOWER: Encoding = RFC4648_LOWER_NOPAD.with_padding(b'=');
+
+/// "base32hex" encoding according to [RFC 4648 section 7](https://www.rfc-editor.org/rfc/rfc4648#section-7) but without padding.
+pub const RFC4648_HEX_NOPAD: Encoding = Encoding::new(*b"0123456789ABCDEFGHIJKLMNOPQRSTUV");
+/// "base32hex" encoding according to [RFC 4648 section 7](https://www.rfc-editor.org/rfc/rfc4648#section-7).
+pub const RFC4648_HEX: Encoding = RFC4648_HEX_NOPAD.with_padding(b'=');
+
+/// Lowercased "base32hex" according to [RFC 4648 section 7](https://www.rfc-editor.org/rfc/rfc4648#section-7) but without padding.
+pub const RFC4648_HEX_LOWER_NOPAD: Encoding = Encoding::new(*b"0123456789abcdefghijklmnopqrstuv");
+/// Lowercased "base32hex" according to [RFC 4648 section 7](https://www.rfc-editor.org/rfc/rfc4648#section-7).
+pub const RFC4648_HEX_LOWER: Encoding = RFC4648_HEX_LOWER_NOPAD.with_padding(b'=');
+
+/// z-base-32 encoding, a [human oriented base-32 encoding](https://philzimmermann.com/docs/human-oriented-base-32-encoding.txt).
+pub const Z: Encoding = Encoding::new(*b"ybndrfg8ejkmcpqxot1uwisza345h769");
+
+/// Nix's Base32 encoding.
+pub const NIX: Encoding = Encoding::new(*b"0123456789abcdfghijklmnpqrsvwxyz").with_reversed();
+
+#[cfg(all(test, feature = "alloc"))]
 mod test {
-    use super::Alphabet::{Crockford, Rfc4648, Rfc4648Hex, Rfc4648HexLower, Rfc4648Lower, Z};
-    use super::{decode, encode};
     use alloc::string::String;
     use alloc::vec::Vec;
-    use core::fmt::{Debug, Error, Formatter};
+    use core::fmt::Debug;
     use quickcheck::{Arbitrary, Gen};
+
+    use super::Error;
 
     #[derive(Clone)]
     struct B32 {
@@ -205,7 +455,7 @@ mod test {
     }
 
     impl Debug for B32 {
-        fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
             (self.c as char).fmt(f)
         }
     }
@@ -213,19 +463,19 @@ mod test {
     #[test]
     fn masks_crockford() {
         assert_eq!(
-            encode(Crockford, &[0xF8, 0x3E, 0x0F, 0x83, 0xE0]),
+            super::CROCKFORD.encode(&[0xF8, 0x3E, 0x0F, 0x83, 0xE0]),
             "Z0Z0Z0Z0"
         );
         assert_eq!(
-            encode(Crockford, &[0x07, 0xC1, 0xF0, 0x7C, 0x1F]),
+            super::CROCKFORD.encode(&[0x07, 0xC1, 0xF0, 0x7C, 0x1F]),
             "0Z0Z0Z0Z"
         );
         assert_eq!(
-            decode(Crockford, "Z0Z0Z0Z0").unwrap(),
+            super::CROCKFORD.decode("Z0Z0Z0Z0").unwrap(),
             [0xF8, 0x3E, 0x0F, 0x83, 0xE0]
         );
         assert_eq!(
-            decode(Crockford, "0Z0Z0Z0Z").unwrap(),
+            super::CROCKFORD.decode("0Z0Z0Z0Z").unwrap(),
             [0x07, 0xC1, 0xF0, 0x7C, 0x1F]
         );
     }
@@ -233,211 +483,202 @@ mod test {
     #[test]
     fn masks_rfc4648() {
         assert_eq!(
-            encode(Rfc4648 { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
-            "7A7H7A7H"
+            super::RFC4648_NOPAD.encode(&[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "7A7H7A7H",
         );
         assert_eq!(
-            encode(Rfc4648 { padding: false }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
-            "O7A7O7A7"
+            super::RFC4648_NOPAD.encode(&[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "O7A7O7A7",
         );
         assert_eq!(
-            decode(Rfc4648 { padding: false }, "7A7H7A7H").unwrap(),
-            [0xF8, 0x3E, 0x7F, 0x83, 0xE7]
+            super::RFC4648_NOPAD.decode("7A7H7A7H").unwrap(),
+            [0xF8, 0x3E, 0x7F, 0x83, 0xE7],
         );
         assert_eq!(
-            decode(Rfc4648 { padding: false }, "O7A7O7A7").unwrap(),
-            [0x77, 0xC1, 0xF7, 0x7C, 0x1F]
+            super::RFC4648_NOPAD.decode("O7A7O7A7").unwrap(),
+            [0x77, 0xC1, 0xF7, 0x7C, 0x1F],
         );
         assert_eq!(
-            encode(Rfc4648 { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83]),
-            "7A7H7AY"
+            super::RFC4648_NOPAD.encode(&[0xF8, 0x3E, 0x7F, 0x83]),
+            "7A7H7AY",
         );
     }
 
     #[test]
     fn masks_rfc4648_pad() {
         assert_eq!(
-            encode(Rfc4648 { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
-            "7A7H7A7H"
+            super::RFC4648.encode(&[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "7A7H7A7H",
         );
         assert_eq!(
-            encode(Rfc4648 { padding: true }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
-            "O7A7O7A7"
+            super::RFC4648.encode(&[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "O7A7O7A7",
         );
         assert_eq!(
-            decode(Rfc4648 { padding: true }, "7A7H7A7H").unwrap(),
-            [0xF8, 0x3E, 0x7F, 0x83, 0xE7]
+            super::RFC4648.decode("7A7H7A7H").unwrap(),
+            [0xF8, 0x3E, 0x7F, 0x83, 0xE7],
         );
         assert_eq!(
-            decode(Rfc4648 { padding: true }, "O7A7O7A7").unwrap(),
-            [0x77, 0xC1, 0xF7, 0x7C, 0x1F]
+            super::RFC4648.decode("O7A7O7A7").unwrap(),
+            [0x77, 0xC1, 0xF7, 0x7C, 0x1F],
         );
-        assert_eq!(
-            encode(Rfc4648 { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83]),
-            "7A7H7AY="
-        );
+        assert_eq!(super::RFC4648.encode(&[0xF8, 0x3E, 0x7F, 0x83]), "7A7H7AY=");
     }
 
     #[test]
     fn masks_rfc4648_lower() {
         assert_eq!(
-            encode(Rfc4648Lower { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
-            "7a7h7a7h"
+            super::RFC4648_LOWER_NOPAD.encode(&[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "7a7h7a7h",
         );
         assert_eq!(
-            encode(Rfc4648Lower { padding: false }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
-            "o7a7o7a7"
+            super::RFC4648_LOWER_NOPAD.encode(&[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "o7a7o7a7",
         );
         assert_eq!(
-            decode(Rfc4648Lower { padding: false }, "7a7h7a7h").unwrap(),
-            [0xF8, 0x3E, 0x7F, 0x83, 0xE7]
+            super::RFC4648_LOWER_NOPAD.decode("7a7h7a7h").unwrap(),
+            [0xF8, 0x3E, 0x7F, 0x83, 0xE7],
         );
         assert_eq!(
-            decode(Rfc4648Lower { padding: false }, "o7a7o7a7").unwrap(),
-            [0x77, 0xC1, 0xF7, 0x7C, 0x1F]
+            super::RFC4648_LOWER_NOPAD.decode("o7a7o7a7").unwrap(),
+            [0x77, 0xC1, 0xF7, 0x7C, 0x1F],
         );
         assert_eq!(
-            encode(Rfc4648Lower { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83]),
-            "7a7h7ay"
+            super::RFC4648_LOWER_NOPAD.encode(&[0xF8, 0x3E, 0x7F, 0x83]),
+            "7a7h7ay",
         );
     }
 
     #[test]
     fn masks_rfc4648_lower_pad() {
         assert_eq!(
-            encode(Rfc4648Lower { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
-            "7a7h7a7h"
+            super::RFC4648_LOWER.encode(&[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "7a7h7a7h",
         );
         assert_eq!(
-            encode(Rfc4648Lower { padding: true }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
-            "o7a7o7a7"
+            super::RFC4648_LOWER.encode(&[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "o7a7o7a7",
         );
         assert_eq!(
-            decode(Rfc4648Lower { padding: true }, "7a7h7a7h").unwrap(),
-            [0xF8, 0x3E, 0x7F, 0x83, 0xE7]
+            super::RFC4648_LOWER.decode("7a7h7a7h").unwrap(),
+            [0xF8, 0x3E, 0x7F, 0x83, 0xE7],
         );
         assert_eq!(
-            decode(Rfc4648Lower { padding: true }, "o7a7o7a7").unwrap(),
-            [0x77, 0xC1, 0xF7, 0x7C, 0x1F]
+            super::RFC4648_LOWER.decode("o7a7o7a7").unwrap(),
+            [0x77, 0xC1, 0xF7, 0x7C, 0x1F],
         );
         assert_eq!(
-            encode(Rfc4648Lower { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83]),
-            "7a7h7ay="
+            super::RFC4648_LOWER.encode(&[0xF8, 0x3E, 0x7F, 0x83]),
+            "7a7h7ay=",
         );
     }
 
     #[test]
     fn masks_rfc4648_hex() {
         assert_eq!(
-            encode(Rfc4648Hex { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
-            "V0V7V0V7"
+            super::RFC4648_HEX_NOPAD.encode(&[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "V0V7V0V7",
         );
         assert_eq!(
-            encode(Rfc4648Hex { padding: false }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
-            "EV0VEV0V"
+            super::RFC4648_HEX_NOPAD.encode(&[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "EV0VEV0V",
         );
         assert_eq!(
-            decode(Rfc4648Hex { padding: false }, "7A7H7A7H").unwrap(),
-            [0x3A, 0x8F, 0x13, 0xA8, 0xF1]
+            super::RFC4648_HEX_NOPAD.decode("7A7H7A7H").unwrap(),
+            [0x3A, 0x8F, 0x13, 0xA8, 0xF1],
         );
         assert_eq!(
-            decode(Rfc4648Hex { padding: false }, "O7A7O7A7").unwrap(),
-            [0xC1, 0xD4, 0x7C, 0x1D, 0x47]
+            super::RFC4648_HEX_NOPAD.decode("O7A7O7A7").unwrap(),
+            [0xC1, 0xD4, 0x7C, 0x1D, 0x47],
         );
         assert_eq!(
-            encode(Rfc4648Hex { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83]),
-            "V0V7V0O"
+            super::RFC4648_HEX_NOPAD.encode(&[0xF8, 0x3E, 0x7F, 0x83]),
+            "V0V7V0O",
         );
     }
 
     #[test]
     fn masks_rfc4648_hex_pad() {
         assert_eq!(
-            encode(Rfc4648Hex { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
-            "V0V7V0V7"
+            super::RFC4648_HEX.encode(&[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "V0V7V0V7",
         );
         assert_eq!(
-            encode(Rfc4648Hex { padding: true }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
-            "EV0VEV0V"
+            super::RFC4648_HEX.encode(&[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "EV0VEV0V",
         );
         assert_eq!(
-            decode(Rfc4648Hex { padding: true }, "7A7H7A7H").unwrap(),
-            [0x3A, 0x8F, 0x13, 0xA8, 0xF1]
+            super::RFC4648_HEX.decode("7A7H7A7H").unwrap(),
+            [0x3A, 0x8F, 0x13, 0xA8, 0xF1],
         );
         assert_eq!(
-            decode(Rfc4648Hex { padding: true }, "O7A7O7A7").unwrap(),
-            [0xC1, 0xD4, 0x7C, 0x1D, 0x47]
+            super::RFC4648_HEX.decode("O7A7O7A7").unwrap(),
+            [0xC1, 0xD4, 0x7C, 0x1D, 0x47],
         );
         assert_eq!(
-            encode(Rfc4648Hex { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83]),
-            "V0V7V0O="
+            super::RFC4648_HEX.encode(&[0xF8, 0x3E, 0x7F, 0x83]),
+            "V0V7V0O=",
         );
     }
 
     #[test]
     fn masks_rfc4648_hex_lower() {
         assert_eq!(
-            encode(Rfc4648HexLower { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
-            "v0v7v0v7"
+            super::RFC4648_HEX_LOWER_NOPAD.encode(&[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "v0v7v0v7",
         );
         assert_eq!(
-            encode(Rfc4648HexLower { padding: false }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
-            "ev0vev0v"
+            super::RFC4648_HEX_LOWER_NOPAD.encode(&[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "ev0vev0v",
         );
         assert_eq!(
-            decode(Rfc4648HexLower { padding: false }, "7a7h7a7h").unwrap(),
-            [0x3A, 0x8F, 0x13, 0xA8, 0xF1]
+            super::RFC4648_HEX_LOWER_NOPAD.decode("7a7h7a7h").unwrap(),
+            [0x3A, 0x8F, 0x13, 0xA8, 0xF1],
         );
         assert_eq!(
-            decode(Rfc4648HexLower { padding: false }, "o7a7o7a7").unwrap(),
-            [0xC1, 0xD4, 0x7C, 0x1D, 0x47]
+            super::RFC4648_HEX_LOWER_NOPAD.decode("o7a7o7a7").unwrap(),
+            [0xC1, 0xD4, 0x7C, 0x1D, 0x47],
         );
         assert_eq!(
-            encode(Rfc4648HexLower { padding: false }, &[0xF8, 0x3E, 0x7F, 0x83]),
-            "v0v7v0o"
+            super::RFC4648_HEX_LOWER_NOPAD.encode(&[0xF8, 0x3E, 0x7F, 0x83]),
+            "v0v7v0o",
         );
     }
 
     #[test]
     fn masks_rfc4648_hex_lower_pad() {
         assert_eq!(
-            encode(Rfc4648HexLower { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
-            "v0v7v0v7"
+            super::RFC4648_HEX_LOWER.encode(&[0xF8, 0x3E, 0x7F, 0x83, 0xE7]),
+            "v0v7v0v7",
         );
         assert_eq!(
-            encode(Rfc4648HexLower { padding: true }, &[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
-            "ev0vev0v"
+            super::RFC4648_HEX_LOWER.encode(&[0x77, 0xC1, 0xF7, 0x7C, 0x1F]),
+            "ev0vev0v",
         );
         assert_eq!(
-            decode(Rfc4648HexLower { padding: true }, "7a7h7a7h").unwrap(),
-            [0x3A, 0x8F, 0x13, 0xA8, 0xF1]
+            super::RFC4648_HEX_LOWER.decode("7a7h7a7h").unwrap(),
+            [0x3A, 0x8F, 0x13, 0xA8, 0xF1],
         );
         assert_eq!(
-            decode(Rfc4648HexLower { padding: true }, "o7a7o7a7").unwrap(),
-            [0xC1, 0xD4, 0x7C, 0x1D, 0x47]
+            super::RFC4648_HEX_LOWER.decode("o7a7o7a7").unwrap(),
+            [0xC1, 0xD4, 0x7C, 0x1D, 0x47],
         );
         assert_eq!(
-            encode(Rfc4648HexLower { padding: true }, &[0xF8, 0x3E, 0x7F, 0x83]),
-            "v0v7v0o="
+            super::RFC4648_HEX_LOWER.encode(&[0xF8, 0x3E, 0x7F, 0x83]),
+            "v0v7v0o=",
         );
     }
 
     #[test]
     fn masks_z() {
+        assert_eq!(super::Z.encode(&[0xF8, 0x3E, 0x0F, 0x83, 0xE0]), "9y9y9y9y");
+        assert_eq!(super::Z.encode(&[0x07, 0xC1, 0xF0, 0x7C, 0x1F]), "y9y9y9y9");
         assert_eq!(
-            encode(Z, &[0xF8, 0x3E, 0x0F, 0x83, 0xE0]),
-            "9y9y9y9y"
+            super::Z.decode("9y9y9y9y").unwrap(),
+            [0xF8, 0x3E, 0x0F, 0x83, 0xE0],
         );
         assert_eq!(
-            encode(Z, &[0x07, 0xC1, 0xF0, 0x7C, 0x1F]),
-            "y9y9y9y9"
-        );
-        assert_eq!(
-            decode(Z, "9y9y9y9y").unwrap(),
-            [0xF8, 0x3E, 0x0F, 0x83, 0xE0]
-        );
-        assert_eq!(
-            decode(Z, "y9y9y9y9").unwrap(),
+            super::Z.decode("y9y9y9y9").unwrap(),
             [0x07, 0xC1, 0xF0, 0x7C, 0x1F]
         );
     }
@@ -446,10 +687,7 @@ mod test {
     fn padding() {
         let num_padding = [0, 6, 4, 3, 1];
         for i in 1..6 {
-            let encoded = encode(
-                Rfc4648 { padding: true },
-                (0..(i as u8)).collect::<Vec<u8>>().as_ref(),
-            );
+            let encoded = super::RFC4648.encode((0..(i as u8)).collect::<Vec<u8>>().as_ref());
             assert_eq!(encoded.len(), 8);
             for j in 0..(num_padding[i % 5]) {
                 assert_eq!(encoded.as_bytes()[encoded.len() - j - 1], b'=');
@@ -463,7 +701,10 @@ mod test {
     #[test]
     fn invertible_crockford() {
         fn test(data: Vec<u8>) -> bool {
-            decode(Crockford, encode(Crockford, data.as_ref()).as_ref()).unwrap() == data
+            super::CROCKFORD
+                .decode(&super::CROCKFORD.encode(&data))
+                .unwrap()
+                == data
         }
         quickcheck::quickcheck(test as fn(Vec<u8>) -> bool)
     }
@@ -471,11 +712,9 @@ mod test {
     #[test]
     fn invertible_rfc4648() {
         fn test(data: Vec<u8>) -> bool {
-            decode(
-                Rfc4648 { padding: true },
-                encode(Rfc4648 { padding: true }, data.as_ref()).as_ref(),
-            )
-            .unwrap()
+            super::RFC4648
+                .decode(&super::RFC4648.encode(&data))
+                .unwrap()
                 == data
         }
         quickcheck::quickcheck(test as fn(Vec<u8>) -> bool)
@@ -483,11 +722,9 @@ mod test {
     #[test]
     fn invertible_unpadded_rfc4648() {
         fn test(data: Vec<u8>) -> bool {
-            decode(
-                Rfc4648 { padding: false },
-                encode(Rfc4648 { padding: false }, data.as_ref()).as_ref(),
-            )
-            .unwrap()
+            super::RFC4648_NOPAD
+                .decode(&super::RFC4648_NOPAD.encode(&data))
+                .unwrap()
                 == data
         }
         quickcheck::quickcheck(test as fn(Vec<u8>) -> bool)
@@ -497,8 +734,8 @@ mod test {
     fn lower_case() {
         fn test(data: Vec<B32>) -> bool {
             let data: String = data.iter().map(|e| e.c as char).collect();
-            decode(Crockford, data.as_ref())
-                == decode(Crockford, data.to_ascii_lowercase().as_ref())
+            super::CROCKFORD.decode(&data.as_ref())
+                == super::CROCKFORD.decode(data.to_ascii_lowercase().as_ref())
         }
         quickcheck::quickcheck(test as fn(Vec<B32>) -> bool)
     }
@@ -506,25 +743,59 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn iIlL1_oO0() {
-        assert_eq!(decode(Crockford, "IiLlOo"), decode(Crockford, "111100"));
+        assert_eq!(
+            super::CROCKFORD.decode("IiLl1Oo0").unwrap(),
+            super::CROCKFORD.decode("11111000").unwrap(),
+        );
     }
 
     #[test]
     fn invalid_chars_crockford() {
-        assert_eq!(decode(Crockford, ","), None)
+        assert_eq!(
+            super::CROCKFORD.decode(",."),
+            Err(Error::InvalidSymbol {
+                offset: 0,
+                symbol: b','
+            }),
+        )
     }
 
     #[test]
     fn invalid_chars_rfc4648() {
-        assert_eq!(decode(Rfc4648 { padding: true }, ","), None)
+        assert_eq!(
+            super::RFC4648.decode(",.======"),
+            Err(Error::InvalidSymbol {
+                offset: 0,
+                symbol: b','
+            }),
+        )
     }
 
     #[test]
     fn invalid_chars_unpadded_rfc4648() {
-        assert_eq!(decode(Rfc4648 { padding: false }, ","), None)
+        assert_eq!(
+            super::RFC4648_NOPAD.decode(",."),
+            Err(Error::InvalidSymbol {
+                offset: 0,
+                symbol: b','
+            }),
+        )
+    }
+
+    #[test]
+    fn nix() {
+        // Copied from https://nix.dev/manual/nix/2.28/command-ref/nix-hash#examples
+        let unencoded = [
+            0xE4, 0xFD, 0x8B, 0xA5, 0xF7, 0xBB, 0xEA, 0xEA, 0x5A, 0xCE, 0x89, 0xFE, 0x10, 0x25,
+            0x55, 0x36, 0xCD, 0x60, 0xDA, 0xB6,
+        ];
+        let encoded = "nvd61k9nalji1zl9rrdfmsmvyyjqpzg4";
+
+        assert_eq!(super::NIX.encode(&unencoded), encoded);
+        assert_eq!(super::NIX.decode(&encoded).unwrap(), unencoded);
     }
 }
 
-#[cfg(doctest)]
+#[cfg(all(doctest, feature = "alloc"))]
 #[doc = include_str!("../README.md")]
 struct Readme;
